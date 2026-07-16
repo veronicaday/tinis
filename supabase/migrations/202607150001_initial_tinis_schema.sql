@@ -257,6 +257,7 @@ create or replace function public.save_rating(
   p_spirit_forward numeric default null,
   p_spirit text default null,
   p_garnish text default null,
+  p_serving_style text default null,
   p_price numeric default null
 )
 returns uuid
@@ -291,10 +292,10 @@ begin
 
   insert into public.ratings (
     club_id, venue_id, user_id, score, dirtiness, chilliness,
-    uniqueness, spirit_forward, spirit, garnish, price
+    uniqueness, spirit_forward, spirit, garnish, serving_style, price
   ) values (
     p_club_id, target_venue_id, auth.uid(), p_score, p_dirtiness, p_chilliness,
-    p_uniqueness, p_spirit_forward, p_spirit, p_garnish, p_price
+    p_uniqueness, p_spirit_forward, p_spirit, p_garnish, p_serving_style, p_price
   ) returning id into new_rating_id;
 
   insert into public.personal_venue_ranks (user_id, venue_id)
@@ -408,8 +409,8 @@ grant select, insert, update, delete on public.venues, public.ratings,
 grant select on public.friend_feed, public.club_leaderboard to authenticated;
 revoke all on function public.join_club(text) from public, anon;
 grant execute on function public.join_club(text) to authenticated;
-revoke all on function public.save_rating(uuid, text, text, numeric, numeric, numeric, numeric, numeric, text, text, numeric) from public, anon;
-grant execute on function public.save_rating(uuid, text, text, numeric, numeric, numeric, numeric, numeric, text, text, numeric) to authenticated;
+revoke all on function public.save_rating(uuid, text, text, numeric, numeric, numeric, numeric, numeric, text, text, text, numeric) from public, anon;
+grant execute on function public.save_rating(uuid, text, text, numeric, numeric, numeric, numeric, numeric, text, text, text, numeric) to authenticated;
 
 insert into public.clubs (name) values ('tini''s martini club');
 insert into public.club_invites (club_id, code_hash, max_uses)

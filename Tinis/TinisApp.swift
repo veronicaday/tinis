@@ -981,6 +981,7 @@ struct AddMartiniView: View {
     @State private var price = "19"
     @State private var spirit = "Gin"
     @State private var garnish = "Olive"
+    @State private var servingStyle = "Up"
     @State private var traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
     @State private var saved = false
     @State private var isSaving = false
@@ -993,8 +994,8 @@ struct AddMartiniView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         ProgressLine(stage: stage)
-                        if stage == 0 { BasicsStep(venueName: $venueName, location: $location, score: $score, price: $price, spirit: $spirit, garnish: $garnish) }
-                        if stage == 1 { TraitsStep(traits: $traits) }
+                        if stage == 0 { BasicsStep(venueName: $venueName, location: $location, score: $score, price: $price, spirit: $spirit, garnish: $garnish, servingStyle: $servingStyle) }
+                        if stage == 1 { TraitsStep(traits: $traits, spirit: spirit, garnish: garnish, servingStyle: servingStyle) }
                         if stage == 2 { DuelStep(newScore: score, comparison: app.topVenue) }
                         Button {
                             if stage < 2 { stage += 1 } else {
@@ -1020,7 +1021,8 @@ struct AddMartiniView: View {
                                                 newVenue,
                                                 price: price,
                                                 spirit: spirit,
-                                                garnish: garnish
+                                                garnish: garnish,
+                                                servingStyle: servingStyle
                                             )
                                         }
                                         app.add(newVenue)
@@ -1051,8 +1053,9 @@ struct AddMartiniView: View {
             .navigationTitle(stage == 0 ? "Add a Martini" : stage == 1 ? "Traits & Details" : "One quick question")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.light, for: .navigationBar)
+            .preferredColorScheme(.light)
             .alert("Added to your club", isPresented: $saved) {
-                Button("Add another") { stage = 0; venueName = ""; score = 8.4; isSaving = false }
+                Button("Add another") { stage = 0; venueName = ""; score = 8.4; spirit = "Gin"; garnish = "Olive"; servingStyle = "Up"; isSaving = false }
             } message: { Text("Your score and personal ranking have been updated.") }
         }
     }
@@ -1084,6 +1087,7 @@ struct BasicsStep: View {
     @Binding var price: String
     @Binding var spirit: String
     @Binding var garnish: String
+    @Binding var servingStyle: String
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             MartiniArtwork(variant: 0)
@@ -1133,6 +1137,7 @@ struct BasicsStep: View {
                     .foregroundStyle(TinisColor.ink.opacity(0.58))
                 OptionPills(label: "Spirit", options: ["Gin", "Vodka", "Both", "Unknown"], selection: $spirit)
                 OptionPills(label: "Garnish", options: ["Olive", "Lemon", "Onion", "Other"], selection: $garnish)
+                OptionPills(label: "Serve", options: ["Up", "Rocks", "Other"], selection: $servingStyle)
                 HStack {
                     Text("Price").font(.system(size: 12, weight: .medium, design: .rounded))
                     Spacer()
@@ -1180,6 +1185,9 @@ struct OptionPills: View {
 
 struct TraitsStep: View {
     @Binding var traits: [String: Double]
+    let spirit: String
+    let garnish: String
+    let servingStyle: String
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text("Optional, but this is where the personality lives.")
@@ -1200,7 +1208,11 @@ struct TraitsStep: View {
                     value: Binding(get: { traits[item.0] ?? 2 }, set: { traits[item.0] = $0 })
                 )
             }
-            InfoCard(title: "THE BASICS") { Text("Gin · Olive · Up").foregroundStyle(TinisColor.forest).fontWeight(.medium) }
+            InfoCard(title: "THE BASICS") {
+                Text("\(spirit) · \(garnish) · \(servingStyle)")
+                    .foregroundStyle(TinisColor.forest)
+                    .fontWeight(.medium)
+            }
         }
     }
 }
@@ -1305,16 +1317,22 @@ struct DuelStep: View {
         VStack(alignment: .leading, spacing: 22) {
             Text("Which would you rather order again?")
                 .font(.system(size: 27, design: .serif))
+                .foregroundStyle(TinisColor.ink)
             Text("This keeps your personal rankings interesting without making every rating a chore.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TinisColor.ink.opacity(0.62))
             HStack(spacing: 14) {
                 DuelCard(title: "The new martini", subtitle: "Your score \(String(format: "%.1f", newScore))", selected: choice == "new") { choice = "new" }
                 DuelCard(title: comparison.name, subtitle: "Your score \(String(format: "%.1f", comparison.score))", selected: choice == "old") { choice = "old" }
             }
             HStack {
-                Button("Too close") { choice = "tie" }.buttonStyle(.bordered)
+                Button("Too close") { choice = "tie" }
+                    .buttonStyle(.bordered)
+                    .tint(TinisColor.gold)
+                    .foregroundStyle(TinisColor.ink)
                 Spacer()
-                Button("Skip for now") { choice = "skip" }.buttonStyle(.borderless).foregroundStyle(.secondary)
+                Button("Skip for now") { choice = "skip" }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(TinisColor.ink.opacity(0.62))
             }
             if let choice { Text(choice == "new" ? "A perfect debut." : choice == "old" ? "Classic still wins." : choice == "tie" ? "A tie is fair." : "No ranking update.").font(.subheadline).foregroundStyle(TinisColor.forest) }
         }
@@ -1330,8 +1348,13 @@ struct DuelCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 26) {
                 Image(systemName: "wineglass").font(.system(size: 36, weight: .ultraLight)).foregroundStyle(TinisColor.gold)
-                Text(title).font(.headline).multilineTextAlignment(.leading)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                Text(title)
+                    .font(.headline)
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(TinisColor.ink)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(TinisColor.ink.opacity(0.58))
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(15)
             .background(selected ? TinisColor.forest.opacity(0.11) : .white.opacity(0.55), in: RoundedRectangle(cornerRadius: 15))

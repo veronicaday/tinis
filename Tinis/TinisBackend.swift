@@ -87,6 +87,7 @@ private struct SaveRatingParameters: Encodable {
     let spiritForward: Double
     let spirit: String
     let garnish: String
+    let servingStyle: String
     let price: Double?
 
     enum CodingKeys: String, CodingKey {
@@ -100,6 +101,7 @@ private struct SaveRatingParameters: Encodable {
         case spiritForward = "p_spirit_forward"
         case spirit = "p_spirit"
         case garnish = "p_garnish"
+        case servingStyle = "p_serving_style"
         case price = "p_price"
     }
 }
@@ -204,7 +206,8 @@ final class TinisBackend: ObservableObject {
         _ venue: MartiniVenue,
         price: String,
         spirit: String,
-        garnish: String
+        garnish: String,
+        servingStyle: String
     ) async throws {
         guard let client, let clubID else { return }
 
@@ -219,6 +222,7 @@ final class TinisBackend: ObservableObject {
             spiritForward: venue.spiritForward,
             spirit: spirit.lowercased(),
             garnish: garnish.lowercased(),
+            servingStyle: servingStyle.lowercased(),
             price: Double(price)
         )
 

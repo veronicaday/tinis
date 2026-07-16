@@ -19,7 +19,7 @@ The initial migration is `supabase/migrations/202607150001_initial_tinis_schema.
 
 It creates the profiles, clubs, memberships, invites, venues, ratings, private notes, personal ranks, comparisons, blocks, and reports tables. It also installs row-level security policies, friend-feed and leaderboard views, rating RPCs, and the private `rating-photos` storage bucket.
 
-The starter club is `tini's martini club`. Its invite code is `DIRTY5`, with a maximum of 10 uses.
+The starter club is `tini's martini club`. Its invite code is `DIRTY`, with a maximum of 10 uses.
 
 ## Authentication
 

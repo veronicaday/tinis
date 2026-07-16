@@ -410,7 +410,7 @@ struct WelcomeView: View {
                         .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 9))
                         .shadow(color: .black.opacity(0.28), radius: 18, y: 8)
                 }
-                Text("Private demo · Invite-only club coming next")
+                Text("Private · Invite-only · Friends only")
                     .font(.system(size: 12, weight: .regular, design: .rounded))
                     .foregroundStyle(TinisColor.cream.opacity(0.68))
                     .padding(.top, 17)
@@ -511,7 +511,7 @@ struct HomeView: View {
     ]
 
     private var activity: [FriendActivity] {
-        guard !backend.friendFeed.isEmpty else { return demoActivity }
+        guard backend.isConfigured else { return demoActivity }
         return backend.friendFeed.enumerated().map { index, row in
             let initial = String(row.displayName.prefix(1)).uppercased()
             let cold = (row.chilliness ?? 2) >= 3 ? "Very cold" : "Soft"
@@ -568,9 +568,30 @@ struct HomeView: View {
                                 .foregroundStyle(TinisColor.cream.opacity(0.68))
                         }
 
-                        ForEach(activity) { item in
-                            FriendActivityCard(activity: item) {
-                                app.selectedVenue = app.venues.first { $0.name == item.venueName }
+                        if backend.isConfigured && activity.isEmpty {
+                            VStack(spacing: 13) {
+                                OliveMark()
+                                    .scaleEffect(0.72)
+                                    .frame(height: 44)
+                                Text("No pours yet")
+                                    .font(.system(size: 24, design: .serif))
+                                Text("Be the first to rate a martini. Your friends’ ratings will appear here as they join in.")
+                                    .font(.system(size: 12, design: .rounded))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(TinisColor.cream.opacity(0.66))
+                                    .lineSpacing(3)
+                            }
+                            .foregroundStyle(TinisColor.cream)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 42)
+                            .background(TinisColor.darkestForest.opacity(0.72), in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(TinisColor.gold.opacity(0.22)))
+                        } else {
+                            ForEach(activity) { item in
+                                FriendActivityCard(activity: item) {
+                                    app.selectedVenue = app.venues.first { $0.name == item.venueName }
+                                }
                             }
                         }
                     }

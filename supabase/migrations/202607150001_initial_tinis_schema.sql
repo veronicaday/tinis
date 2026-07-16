@@ -413,7 +413,7 @@ grant execute on function public.save_rating(uuid, text, text, numeric, numeric,
 
 insert into public.clubs (name) values ('tini''s martini club');
 insert into public.club_invites (club_id, code_hash, max_uses)
-select id, extensions.crypt('DIRTY5', extensions.gen_salt('bf')), 10
+select id, extensions.crypt('DIRTY', extensions.gen_salt('bf')), 10
 from public.clubs where name = 'tini''s martini club';
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

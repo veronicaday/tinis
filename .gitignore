@@ -1,22 +1,10 @@
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local Supabase configuration
+Tinis/Config/Secrets.xcconfig
+
 # macOS
 .DS_Store
-
-# Xcode user-specific state
-xcuserdata/
-*.xcuserstate
-
-# Build products
-DerivedData/
-build/
-*.ipa
-*.dSYM.zip
-*.dSYM
-
-# Swift Package Manager
-.build/
-.swiftpm/
-
-# Local secrets and configuration
-.env
-.env.*
-*.xcconfig.local

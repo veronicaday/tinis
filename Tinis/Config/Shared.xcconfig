@@ -1,0 +1,5 @@
+// Safe defaults. The ignored Secrets.xcconfig file overrides these locally.
+SUPABASE_URL =
+SUPABASE_PUBLISHABLE_KEY =
+
+#include? "Secrets.xcconfig"

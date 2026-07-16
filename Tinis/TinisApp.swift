@@ -120,6 +120,7 @@ enum ProfileTopFilter: String, CaseIterable, Identifiable {
 @MainActor
 final class TinisStore: ObservableObject {
     @Published var hasOnboarded = false
+    @Published var selectedTab = 0
     @Published var firstName = "Veronica"
     @Published var selectedVenue: MartiniVenue?
     @Published var venues: [MartiniVenue] = [
@@ -422,10 +423,10 @@ struct WelcomeView: View {
 }
 
 struct MainTabView: View {
-    @State private var selectedTab = 0
+    @EnvironmentObject private var app: TinisStore
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $app.selectedTab) {
             HomeView()
                 .tag(0)
             SearchView()
@@ -439,7 +440,7 @@ struct MainTabView: View {
         }
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            TinisTabBar(selection: $selectedTab)
+            TinisTabBar(selection: $app.selectedTab)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
@@ -983,7 +984,6 @@ struct AddMartiniView: View {
     @State private var garnish = "Olive"
     @State private var servingStyle = "Up"
     @State private var traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
-    @State private var saved = false
     @State private var isSaving = false
 
     var body: some View {
@@ -1026,7 +1026,10 @@ struct AddMartiniView: View {
                                             )
                                         }
                                         app.add(newVenue)
-                                        saved = true
+                                        resetForm()
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            app.selectedTab = 3
+                                        }
                                     } catch {
                                         backend.errorMessage = "Your martini could not be saved. Please try again."
                                         isSaving = false
@@ -1054,10 +1057,20 @@ struct AddMartiniView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.light, for: .navigationBar)
             .preferredColorScheme(.light)
-            .alert("Added to your club", isPresented: $saved) {
-                Button("Add another") { stage = 0; venueName = ""; score = 8.4; spirit = "Gin"; garnish = "Olive"; servingStyle = "Up"; isSaving = false }
-            } message: { Text("Your score and personal ranking have been updated.") }
         }
+    }
+
+    private func resetForm() {
+        stage = 0
+        venueName = ""
+        location = "New York, NY"
+        score = 8.4
+        price = "19"
+        spirit = "Gin"
+        garnish = "Olive"
+        servingStyle = "Up"
+        traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
+        isSaving = false
     }
 
     private var traitDescription: String {

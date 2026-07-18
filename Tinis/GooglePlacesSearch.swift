@@ -58,6 +58,23 @@ enum TinisGooglePlaces {
         )
     }
 
+    static func enrichedSelection(from place: Place) async -> Result<GooglePlaceSelection, PlacesError> {
+        if place.displayName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil {
+            return .success(selection(from: place))
+        }
+
+        guard let placeID = place.placeID else {
+            return .success(selection(from: place))
+        }
+
+        let request = FetchPlaceRequest(
+            placeID: placeID,
+            placeProperties: [.placeID, .displayName, .formattedAddress, .addressComponents]
+        )
+        return await PlacesClient.shared.fetchPlace(with: request)
+            .map(selection(from:))
+    }
+
     private static func compactLocation(
         from components: [AddressComponent]?,
         fallback address: String?
@@ -108,9 +125,23 @@ extension View {
                 initialQuery: initialQuery,
                 show: show,
                 onSelection: { place in
-                    onSelection(TinisGooglePlaces.selection(from: place))
+                    Task { @MainActor in
+                        switch await TinisGooglePlaces.enrichedSelection(from: place) {
+                        case let .success(selection):
+                            onSelection(selection)
+                        case let .failure(error):
+                            onError(error.localizedDescription)
+                        }
+                    }
                 },
                 onError: { error in
+#if DEBUG
+                    let diagnostic = error as NSError
+                    print(
+                        "Google Places error [\(diagnostic.domain) \(diagnostic.code)]: " +
+                        "\(String(reflecting: error)); \(diagnostic.localizedDescription)"
+                    )
+#endif
                     onError(error.localizedDescription)
                 }
             )

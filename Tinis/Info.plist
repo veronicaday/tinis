@@ -37,6 +37,8 @@
 	<string>public.app-category.food-and-drink</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>GOOGLE_PLACES_API_KEY</key>
+	<string>$(GOOGLE_PLACES_API_KEY)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>tini’s uses the camera so you can photograph the martinis you rate.</string>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>

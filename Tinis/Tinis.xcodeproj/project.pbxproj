@@ -11,7 +11,9 @@
 		B10000000000000000000001 /* TinisBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* TinisBackend.swift */; };
 		B10000000000000000000002 /* TinisAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* TinisAuthView.swift */; };
 		B10000000000000000000003 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000022 /* Supabase */; };
+		D10000000000000000000003 /* GooglePlacesSwift in Frameworks */ = {isa = PBXBuildFile; productRef = D10000000000000000000022 /* GooglePlacesSwift */; };
 		C10000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000002 /* Assets.xcassets */; };
+		D10000000000000000000001 /* GooglePlacesSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* GooglePlacesSearch.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +24,7 @@
 		B10000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000014 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
 		B10000000000000000000015 /* Secrets.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Secrets.xcconfig.example; sourceTree = "<group>"; };
+		D10000000000000000000011 /* GooglePlacesSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePlacesSearch.swift; sourceTree = "<group>"; };
 		C10000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -31,6 +34,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B10000000000000000000003 /* Supabase in Frameworks */,
+				D10000000000000000000003 /* GooglePlacesSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -52,6 +56,7 @@
 				A10000000000000000000001 /* TinisApp.swift */,
 				B10000000000000000000011 /* TinisBackend.swift */,
 				B10000000000000000000012 /* TinisAuthView.swift */,
+				D10000000000000000000011 /* GooglePlacesSearch.swift */,
 				B10000000000000000000013 /* Info.plist */,
 				B10000000000000000000014 /* Shared.xcconfig */,
 				B10000000000000000000015 /* Secrets.xcconfig.example */,
@@ -85,6 +90,7 @@
 			name = Tinis;
 			packageProductDependencies = (
 				B10000000000000000000022 /* Supabase */,
+				D10000000000000000000022 /* GooglePlacesSwift */,
 			);
 			productName = Tinis;
 			productReference = A10000000000000000000002 /* Tinis.app */;
@@ -115,6 +121,7 @@
 			mainGroup = A10000000000000000000003;
 			packageReferences = (
 				B10000000000000000000021 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				D10000000000000000000021 /* XCRemoteSwiftPackageReference "ios-places-sdk" */,
 			);
 			productRefGroup = A10000000000000000000005 /* Products */;
 			projectDirPath = "";
@@ -144,6 +151,7 @@
 				A10000000000000000000011 /* TinisApp.swift in Sources */,
 				B10000000000000000000001 /* TinisBackend.swift in Sources */,
 				B10000000000000000000002 /* TinisAuthView.swift in Sources */,
+				D10000000000000000000001 /* GooglePlacesSearch.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -329,6 +337,14 @@
 				minimumVersion = 2.52.0;
 			};
 		};
+		D10000000000000000000021 /* XCRemoteSwiftPackageReference "ios-places-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-places-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 10.15.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -336,6 +352,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B10000000000000000000021 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		D10000000000000000000022 /* GooglePlacesSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D10000000000000000000021 /* XCRemoteSwiftPackageReference "ios-places-sdk" */;
+			productName = GooglePlacesSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

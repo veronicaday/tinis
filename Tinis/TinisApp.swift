@@ -7,6 +7,10 @@ struct TinisApp: App {
     @StateObject private var app = TinisStore()
     @StateObject private var backend = TinisBackend()
 
+    init() {
+        TinisGooglePlaces.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
             TinisRootView()
@@ -125,6 +129,7 @@ final class TinisStore: ObservableObject {
     @Published var selectedTab = 0
     @Published var firstName = "Veronica"
     @Published var selectedVenue: MartiniVenue?
+    @Published var pendingGooglePlace: GooglePlaceSelection?
     @Published var venues: [MartiniVenue] = [
         .init(name: "Bemelmans Bar", location: "New York, NY", score: 8.9, ratingCount: 7, date: "May 12, 2024", trait: "cold, lightly dirty", dirtiness: 3.2, chilliness: 4.0, uniqueness: 2.1, spiritForward: 3.7, elo: 1628),
         .init(name: "Dante", location: "New York, NY", score: 8.7, ratingCount: 6, date: "Apr 28, 2024", trait: "bright, classic", dirtiness: 0.8, chilliness: 3.4, uniqueness: 1.1, spiritForward: 2.8, elo: 1606),
@@ -137,6 +142,9 @@ final class TinisStore: ObservableObject {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
             hasOnboarded = true
+        }
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-search") {
+            selectedTab = 1
         }
 #endif
     }
@@ -786,11 +794,8 @@ struct ScoreBadge: View {
 
 struct SearchView: View {
     @EnvironmentObject private var app: TinisStore
-    @State private var query = ""
-
-    private var filtered: [MartiniVenue] {
-        query.isEmpty ? app.venues : app.venues.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.location.localizedCaseInsensitiveContains(query) }
-    }
+    @State private var isShowingPlaceSearch = false
+    @State private var searchNotice: String?
 
     var body: some View {
         ZStack {
@@ -805,25 +810,43 @@ struct SearchView: View {
                         .foregroundStyle(TinisColor.cream.opacity(0.64))
                 }
 
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(TinisColor.moss)
-                    TextField("Search bars or cities", text: $query)
-                        .textInputAutocapitalization(.words)
-                        .foregroundStyle(TinisColor.ink)
-                    if !query.isEmpty {
-                        Button { query = "" } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(TinisColor.ink.opacity(0.35))
-                        }
+                Button {
+                    if TinisGooglePlaces.isConfigured {
+                        isShowingPlaceSearch = true
+                    } else {
+                        searchNotice = "Google venue search is ready in the app, but it still needs a Google Places API key."
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(TinisColor.moss)
+                        Text("Search bars or restaurants")
+                            .foregroundStyle(TinisColor.ink.opacity(0.55))
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(TinisColor.forest)
                     }
                 }
                 .padding(.horizontal, 15)
                 .frame(height: 48)
                 .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 12))
+                .buttonStyle(.plain)
+
+                HStack {
+                    Text("RATED BY YOUR CLUB")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(1.3)
+                        .foregroundStyle(TinisColor.cream.opacity(0.58))
+                    Spacer()
+                    Text("\(app.venues.count) spots")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(TinisColor.gold)
+                }
 
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, venue in
+                        ForEach(Array(app.venues.enumerated()), id: \.element.id) { index, venue in
                             Button {
                                 app.selectedVenue = venue
                             } label: {
@@ -859,6 +882,26 @@ struct SearchView: View {
             VenueDetailView(venue: $0)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        .tinisPlaceSearch(
+            show: $isShowingPlaceSearch,
+            onSelection: { selection in
+                app.pendingGooglePlace = selection
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    app.selectedTab = 2
+                }
+            },
+            onError: { _ in
+                searchNotice = "Google venue search could not load. Please check your connection and try again."
+            }
+        )
+        .alert("Venue search", isPresented: Binding(
+            get: { searchNotice != nil },
+            set: { if !$0 { searchNotice = nil } }
+        )) {
+            Button("OK") { searchNotice = nil }
+        } message: {
+            Text(searchNotice ?? "")
         }
     }
 }
@@ -1024,6 +1067,8 @@ struct AddMartiniView: View {
     @State private var isSaving = false
     @State private var saveNotice: String?
     @State private var didSaveDespiteNotice = false
+    @State private var isShowingPlaceSearch = false
+    @State private var placeSearchNotice: String?
 
     var body: some View {
         NavigationStack {
@@ -1033,7 +1078,19 @@ struct AddMartiniView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         ProgressLine(stage: stage)
-                        if stage == 0 { BasicsStep(venueName: $venueName, location: $location, score: $score, price: $price, spirit: $spirit, garnish: $garnish, servingStyle: $servingStyle, photoData: $photoData) }
+                        if stage == 0 {
+                            BasicsStep(
+                                venueName: $venueName,
+                                location: $location,
+                                score: $score,
+                                price: $price,
+                                spirit: $spirit,
+                                garnish: $garnish,
+                                servingStyle: $servingStyle,
+                                photoData: $photoData,
+                                searchVenue: openVenueSearch
+                            )
+                        }
                         if stage == 1 { TraitsStep(traits: $traits, spirit: spirit, garnish: garnish, servingStyle: servingStyle) }
                         if stage == 2 { DuelStep(newScore: score, comparison: app.topVenue) }
                         Button {
@@ -1123,7 +1180,44 @@ struct AddMartiniView: View {
             } message: {
                 Text(saveNotice ?? "")
             }
+            .tinisPlaceSearch(
+                show: $isShowingPlaceSearch,
+                initialQuery: venueName,
+                onSelection: applyGooglePlace,
+                onError: { _ in
+                    placeSearchNotice = "Google venue search could not load. Please check your connection and try again."
+                }
+            )
+            .alert("Venue search", isPresented: Binding(
+                get: { placeSearchNotice != nil },
+                set: { if !$0 { placeSearchNotice = nil } }
+            )) {
+                Button("OK") { placeSearchNotice = nil }
+            } message: {
+                Text(placeSearchNotice ?? "")
+            }
+            .onAppear(perform: applyPendingGooglePlace)
+            .onChange(of: app.pendingGooglePlace) { _, _ in applyPendingGooglePlace() }
         }
+    }
+
+    private func openVenueSearch() {
+        if TinisGooglePlaces.isConfigured {
+            isShowingPlaceSearch = true
+        } else {
+            placeSearchNotice = "Google venue search is ready in the app, but it still needs a Google Places API key."
+        }
+    }
+
+    private func applyPendingGooglePlace() {
+        guard let selection = app.pendingGooglePlace else { return }
+        applyGooglePlace(selection)
+        app.pendingGooglePlace = nil
+    }
+
+    private func applyGooglePlace(_ selection: GooglePlaceSelection) {
+        venueName = selection.name
+        location = selection.location
     }
 
     private func resetForm() {
@@ -1169,14 +1263,30 @@ struct BasicsStep: View {
     @Binding var garnish: String
     @Binding var servingStyle: String
     @Binding var photoData: Data?
+    let searchVenue: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             MartiniPhotoPicker(photoData: $photoData)
             InfoCard(title: "WHERE WERE YOU?") {
-                HStack {
-                    Image(systemName: "mappin.and.ellipse").foregroundStyle(TinisColor.moss)
-                    TextField("Search a bar or restaurant", text: $venueName).textInputAutocapitalization(.words)
+                Button(action: searchVenue) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.and.ellipse").foregroundStyle(TinisColor.moss)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(venueName.isEmpty ? "Search a bar or restaurant" : venueName)
+                                .foregroundStyle(venueName.isEmpty ? TinisColor.ink.opacity(0.48) : TinisColor.ink)
+                            if !venueName.isEmpty {
+                                Text("Tap to change venue")
+                                    .font(.system(size: 9, design: .rounded))
+                                    .foregroundStyle(TinisColor.moss)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(TinisColor.ink.opacity(0.28))
+                    }
                 }
+                .buttonStyle(.plain)
                 Divider()
                 HStack {
                     Image(systemName: "building.2").foregroundStyle(TinisColor.moss)

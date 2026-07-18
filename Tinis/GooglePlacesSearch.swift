@@ -430,11 +430,10 @@ extension View {
                     onSelection: onSelection,
                     onError: onError
                 )
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
                 .presentationBackground(TinisColor.cream)
-                .presentationContentInteraction(.scrolls)
             }
         } else {
             self

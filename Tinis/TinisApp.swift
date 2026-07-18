@@ -40,6 +40,12 @@ struct MartiniVenue: Identifiable, Hashable {
     var uniqueness: Double
     var spiritForward: Double
     var elo: Int
+    var spirit: String = "Unknown"
+    var garnish: String = "Unknown"
+    var servingStyle: String = "Unknown"
+    var price: Double? = nil
+    var note: String = ""
+    var companions: [String] = []
 }
 
 enum DuelChoice: String {
@@ -168,11 +174,11 @@ final class TinisStore: ObservableObject {
     @Published var selectedVenue: MartiniVenue?
     @Published var pendingGooglePlace: GooglePlaceSelection?
     @Published var venues: [MartiniVenue] = [
-        .init(name: "Bemelmans Bar", location: "New York, NY", score: 8.9, ratingCount: 7, date: "May 12, 2024", trait: "cold, lightly dirty", dirtiness: 3.2, chilliness: 4.0, uniqueness: 2.1, spiritForward: 3.7, elo: 1628),
-        .init(name: "Dante", location: "New York, NY", score: 8.7, ratingCount: 6, date: "Apr 28, 2024", trait: "bright, classic", dirtiness: 0.8, chilliness: 3.4, uniqueness: 1.1, spiritForward: 2.8, elo: 1606),
-        .init(name: "Employees Only", location: "New York, NY", score: 8.4, ratingCount: 5, date: "May 15, 2024", trait: "clean, spirit-forward", dirtiness: 0.3, chilliness: 2.8, uniqueness: 3.1, spiritForward: 4.0, elo: 1574),
-        .init(name: "The Savoy", location: "London, UK", score: 8.3, ratingCount: 4, date: "Feb 9, 2024", trait: "silky, perfectly cold", dirtiness: 1.4, chilliness: 3.9, uniqueness: 1.7, spiritForward: 2.3, elo: 1558),
-        .init(name: "Clover Club", location: "Brooklyn, NY", score: 8.1, ratingCount: 3, date: "Jan 20, 2024", trait: "soft, lemony", dirtiness: 3.8, chilliness: 2.2, uniqueness: 4.0, spiritForward: 1.2, elo: 1531)
+        .init(name: "Bemelmans Bar", location: "New York, NY", score: 8.9, ratingCount: 7, date: "May 12, 2024", trait: "cold, lightly dirty", dirtiness: 3.2, chilliness: 4.0, uniqueness: 2.1, spiritForward: 3.7, elo: 1628, spirit: "Gin", garnish: "Olive", servingStyle: "Up", price: 19, note: "Perfectly icy, briny, and balanced.", companions: ["Sarah", "Alex"]),
+        .init(name: "Dante", location: "New York, NY", score: 8.7, ratingCount: 6, date: "Apr 28, 2024", trait: "bright, classic", dirtiness: 0.8, chilliness: 3.4, uniqueness: 1.1, spiritForward: 2.8, elo: 1606, spirit: "Gin", garnish: "Lemon", servingStyle: "Up", price: 18, note: "Bright citrus with a clean finish.", companions: ["Maya"]),
+        .init(name: "Employees Only", location: "New York, NY", score: 8.4, ratingCount: 5, date: "May 15, 2024", trait: "clean, spirit-forward", dirtiness: 0.3, chilliness: 2.8, uniqueness: 3.1, spiritForward: 4.0, elo: 1574, spirit: "Gin", garnish: "Olive", servingStyle: "Up", price: 20, note: "A strong pour with a silky texture.", companions: ["Jack"]),
+        .init(name: "The Savoy", location: "London, UK", score: 8.3, ratingCount: 4, date: "Feb 9, 2024", trait: "silky, perfectly cold", dirtiness: 1.4, chilliness: 3.9, uniqueness: 1.7, spiritForward: 2.3, elo: 1558, spirit: "Gin", garnish: "Lemon", servingStyle: "Up", price: 22, note: "Classic, elegant, and extremely cold."),
+        .init(name: "Clover Club", location: "Brooklyn, NY", score: 8.1, ratingCount: 3, date: "Jan 20, 2024", trait: "soft, lemony", dirtiness: 3.8, chilliness: 2.2, uniqueness: 4.0, spiritForward: 1.2, elo: 1531, spirit: "Gin", garnish: "Olive", servingStyle: "Up", price: 16, note: "Great price for a playful dirty martini.", companions: ["Sarah", "Maya"])
     ]
 
     init() {
@@ -208,6 +214,12 @@ final class TinisStore: ObservableObject {
             venues[index].uniqueness = venue.uniqueness
             venues[index].spiritForward = venue.spiritForward
             venues[index].elo = venue.elo
+            venues[index].spirit = venue.spirit
+            venues[index].garnish = venue.garnish
+            venues[index].servingStyle = venue.servingStyle
+            venues[index].price = venue.price
+            venues[index].note = venue.note
+            venues[index].companions = venue.companions
             selectedVenue = venues[index]
         } else {
             venues.append(venue)
@@ -228,15 +240,30 @@ final class TinisStore: ObservableObject {
                 location: location,
                 score: row.score,
                 ratingCount: row.ratingCount,
-                date: "Shared club",
+                date: displayDate(row.latestVisit),
                 trait: "\(cold), \(dirty)",
                 dirtiness: row.dirtiness ?? 2,
                 chilliness: row.chilliness ?? 2,
                 uniqueness: row.uniqueness ?? 2,
                 spiritForward: row.spiritForward ?? 2,
-                elo: 1500
+                elo: 1500,
+                spirit: row.spirit?.capitalized ?? "Unknown",
+                garnish: row.garnish?.capitalized ?? "Unknown",
+                servingStyle: row.servingStyle?.capitalized ?? "Unknown",
+                price: row.price,
+                note: row.publicNote ?? "",
+                companions: row.companions ?? []
             )
         }
+    }
+
+    private func displayDate(_ timestamp: String) -> String {
+        let rawDate = String(timestamp.prefix(10))
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: rawDate) else { return "Recent visit" }
+        return date.formatted(date: .abbreviated, time: .omitted)
     }
 }
 
@@ -380,29 +407,28 @@ struct MartiniArtwork: View {
                             .offset(y: side * 0.035)
 
                         if showOlives {
-                            Capsule()
-                                .fill(TinisColor.paleGold.opacity(0.85))
-                                .frame(width: glassWidth * 0.63, height: max(1, side * 0.009))
-                                .rotationEffect(.degrees(-18))
-                                .offset(x: glassWidth * 0.05, y: bowlHeight * 0.45)
-                            HStack(spacing: -side * 0.018) {
-                                ForEach(0..<3, id: \.self) { index in
-                                    Circle()
-                                        .fill(
-                                            RadialGradient(
-                                                colors: [Color(hex: 0xB4A455), Color(hex: 0x59612D)],
-                                                center: .topLeading,
-                                                startRadius: 0,
-                                                endRadius: side * 0.075
+                            ZStack {
+                                Capsule()
+                                    .fill(TinisColor.paleGold.opacity(0.85))
+                                    .frame(width: glassWidth * 0.72, height: max(1, side * 0.009))
+                                HStack(spacing: -side * 0.018) {
+                                    ForEach(0..<3, id: \.self) { _ in
+                                        Circle()
+                                            .fill(
+                                                RadialGradient(
+                                                    colors: [Color(hex: 0xB4A455), Color(hex: 0x59612D)],
+                                                    center: .topLeading,
+                                                    startRadius: 0,
+                                                    endRadius: side * 0.075
+                                                )
                                             )
-                                        )
-                                        .frame(width: side * 0.105, height: side * 0.105)
-                                        .overlay(Circle().fill(Color(hex: 0x6A2E25)).frame(width: side * 0.025))
-                                        .offset(y: CGFloat(index) * side * 0.025)
+                                            .frame(width: side * 0.105, height: side * 0.105)
+                                            .overlay(Circle().fill(Color(hex: 0x6A2E25)).frame(width: side * 0.025))
+                                    }
                                 }
                             }
                             .rotationEffect(.degrees(-18))
-                            .offset(x: -glassWidth * 0.03, y: bowlHeight * 0.46)
+                            .offset(x: glassWidth * 0.02, y: bowlHeight * 0.45)
                         }
                     }
                     .frame(width: glassWidth, height: bowlHeight)
@@ -985,11 +1011,23 @@ struct VenueDetailView: View {
                         ScoreBadge(score: venue.score)
                     }
 
-                    InfoCard(title: "Would order again") {
-                        HStack { Text("Absolutely").foregroundStyle(TinisColor.forest).fontWeight(.semibold); Spacer(); Text("$19").foregroundStyle(.secondary) }
+                    MartiniBasicsSummary(venue: venue)
+
+                    RatingOccasionSummary(venue: venue)
+
+                    InfoCard(title: "TASTING NOTES") {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "quote.opening")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(TinisColor.gold)
+                            Text(venue.note.isEmpty ? "No notes added for this martini." : venue.note)
+                                .font(.system(size: 14, design: .serif))
+                                .foregroundStyle(venue.note.isEmpty ? TinisColor.ink.opacity(0.48) : TinisColor.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
 
-                    TraitSummary()
+                    TraitSummary(venue: venue)
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("FRIEND RATINGS").font(.caption.bold()).tracking(1.2)
@@ -1040,12 +1078,21 @@ struct InfoCard<Content: View>: View {
 }
 
 struct TraitSummary: View {
-    private let rows = [
-        ("Dirtiness", "Clean", "Filthy", 3, "olive"),
-        ("Chilliness", "Warm", "Arctic", 4, "snowflake"),
-        ("Uniqueness", "Classic", "Wild", 2, "sparkles"),
-        ("Spirit-forward", "Smooth", "Rocket fuel", 4, "martini")
-    ]
+    let venue: MartiniVenue
+
+    private var rows: [(String, String, String, Int, String)] {
+        [
+            ("Dirtiness", "Clean", "Filthy", step(for: venue.dirtiness), "olive"),
+            ("Chilliness", "Warm", "Arctic", step(for: venue.chilliness), "snowflake"),
+            ("Uniqueness", "Classic", "Wild", step(for: venue.uniqueness), "sparkles"),
+            ("Spirit-forward", "Smooth", "Rocket fuel", step(for: venue.spiritForward), "martini")
+        ]
+    }
+
+    private func step(for value: Double) -> Int {
+        min(4, max(0, Int(value.rounded())))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("TRAITS").font(.system(size: 10, weight: .bold, design: .rounded)).tracking(1.2)
@@ -1079,6 +1126,91 @@ struct TraitSummary: View {
     }
 }
 
+struct MartiniBasicsSummary: View {
+    let venue: MartiniVenue
+
+    private var priceText: String {
+        guard let price = venue.price else { return "—" }
+        return price.formatted(
+            .currency(code: "USD")
+                .precision(.fractionLength(price.rounded() == price ? 0 : 2))
+        )
+    }
+
+    var body: some View {
+        InfoCard(title: "THE BASICS") {
+            HStack(spacing: 0) {
+                BasicRatingValue(label: "SPIRIT", value: venue.spirit)
+                Divider().frame(height: 38)
+                BasicRatingValue(label: "GARNISH", value: venue.garnish)
+                Divider().frame(height: 38)
+                BasicRatingValue(label: "SERVE", value: venue.servingStyle)
+                Divider().frame(height: 38)
+                BasicRatingValue(label: "PRICE", value: priceText)
+            }
+        }
+    }
+}
+
+struct BasicRatingValue: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .tracking(0.7)
+                .foregroundStyle(TinisColor.ink.opacity(0.48))
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(TinisColor.forest)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+    }
+}
+
+struct RatingOccasionSummary: View {
+    let venue: MartiniVenue
+
+    var body: some View {
+        InfoCard(title: "THE OCCASION") {
+            HStack {
+                Label(venue.date, systemImage: "calendar")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(TinisColor.forest)
+                Spacer()
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("WITH")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .tracking(0.7)
+                    .foregroundStyle(TinisColor.ink.opacity(0.48))
+                if venue.companions.isEmpty {
+                    Text("Just me")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(TinisColor.ink.opacity(0.52))
+                } else {
+                    FlowLayout(spacing: 7) {
+                        ForEach(venue.companions, id: \.self) { friend in
+                            Label(friend, systemImage: "person.fill")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundStyle(TinisColor.forest)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(TinisColor.paleGold.opacity(0.38), in: Capsule())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct FriendScore: View {
     let name: String
     let score: Double
@@ -1104,6 +1236,9 @@ struct AddMartiniView: View {
     @State private var spirit = "Gin"
     @State private var garnish = "Olive"
     @State private var servingStyle = "Up"
+    @State private var note = ""
+    @State private var visitDate = Date()
+    @State private var selectedCompanionIDs: Set<UUID> = []
     @State private var photoData: Data?
     @State private var traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
     @State private var duelChoice: DuelChoice?
@@ -1129,6 +1264,10 @@ struct AddMartiniView: View {
                                 spirit: $spirit,
                                 garnish: $garnish,
                                 servingStyle: $servingStyle,
+                                note: $note,
+                                visitDate: $visitDate,
+                                friends: availableFriends,
+                                selectedCompanionIDs: $selectedCompanionIDs,
                                 photoData: $photoData,
                                 searchVenue: openVenueSearch
                             )
@@ -1155,7 +1294,15 @@ struct AddMartiniView: View {
                                     chilliness: traits["Chilliness"] ?? 2,
                                     uniqueness: traits["Uniqueness"] ?? 2,
                                     spiritForward: traits["Spirit-forward"] ?? 2,
-                                    elo: updatedElo.new
+                                    elo: updatedElo.new,
+                                    spirit: spirit,
+                                    garnish: garnish,
+                                    servingStyle: servingStyle,
+                                    price: Double(price),
+                                    note: note.trimmingCharacters(in: .whitespacesAndNewlines),
+                                    companions: availableFriends
+                                        .filter { selectedCompanionIDs.contains($0.id) }
+                                        .map(\.displayName)
                                 )
                                 Task {
                                     do {
@@ -1166,6 +1313,8 @@ struct AddMartiniView: View {
                                                 spirit: spirit,
                                                 garnish: garnish,
                                                 servingStyle: servingStyle,
+                                                visitDate: visitDate,
+                                                companionIDs: Array(selectedCompanionIDs),
                                                 photoData: photoData
                                             )
                                             if let photoWarning {
@@ -1278,6 +1427,9 @@ struct AddMartiniView: View {
         spirit = "Gin"
         garnish = "Olive"
         servingStyle = "Up"
+        note = ""
+        visitDate = Date()
+        selectedCompanionIDs = []
         photoData = nil
         traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
         duelChoice = nil
@@ -1288,6 +1440,16 @@ struct AddMartiniView: View {
         let dirty = (traits["Dirtiness"] ?? 0) >= 3 ? "lightly dirty" : "clean"
         let cold = (traits["Chilliness"] ?? 0) >= 3 ? "very cold" : "soft"
         return "\(cold), \(dirty)"
+    }
+
+    private var availableFriends: [TinisClubFriend] {
+        if !backend.clubFriends.isEmpty { return backend.clubFriends }
+        return [
+            TinisClubFriend(id: UUID(uuidString: "10000000-0000-0000-0000-000000000001")!, displayName: "Sarah"),
+            TinisClubFriend(id: UUID(uuidString: "10000000-0000-0000-0000-000000000002")!, displayName: "Alex"),
+            TinisClubFriend(id: UUID(uuidString: "10000000-0000-0000-0000-000000000003")!, displayName: "Maya"),
+            TinisClubFriend(id: UUID(uuidString: "10000000-0000-0000-0000-000000000004")!, displayName: "Jack")
+        ]
     }
 }
 
@@ -1311,6 +1473,10 @@ struct BasicsStep: View {
     @Binding var spirit: String
     @Binding var garnish: String
     @Binding var servingStyle: String
+    @Binding var note: String
+    @Binding var visitDate: Date
+    let friends: [TinisClubFriend]
+    @Binding var selectedCompanionIDs: Set<UUID>
     @Binding var photoData: Data?
     let searchVenue: () -> Void
     var body: some View {
@@ -1359,10 +1525,52 @@ struct BasicsStep: View {
                         .multilineTextAlignment(.trailing)
                         .frame(width: 48)
                 }
+                Divider()
+                DatePicker("Date", selection: $visitDate, in: ...Date(), displayedComponents: .date)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
             }
             .padding(15)
             .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
+            InfoCard(title: "TASTING NOTES · OPTIONAL") {
+                TextField("What stood out about this martini?", text: $note, axis: .vertical)
+                    .font(.system(size: 14, design: .rounded))
+                    .lineLimit(3...6)
+                    .onChange(of: note) { _, newValue in
+                        if newValue.count > 500 {
+                            note = String(newValue.prefix(500))
+                        }
+                    }
+                HStack {
+                    Text("Add anything you’ll want to remember.")
+                    Spacer()
+                    Text("\(note.count)/500")
+                }
+                .font(.system(size: 9, design: .rounded))
+                .foregroundStyle(TinisColor.ink.opacity(0.42))
+            }
+            InfoCard(title: "WHO WERE YOU WITH? · OPTIONAL") {
+                FlowLayout(spacing: 8) {
+                    ForEach(friends) { friend in
+                        let isSelected = selectedCompanionIDs.contains(friend.id)
+                        Button {
+                            if isSelected {
+                                selectedCompanionIDs.remove(friend.id)
+                            } else {
+                                selectedCompanionIDs.insert(friend.id)
+                            }
+                        } label: {
+                            Label(friend.displayName, systemImage: isSelected ? "checkmark.circle.fill" : "person.crop.circle")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(isSelected ? TinisColor.cream : TinisColor.forest)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(isSelected ? TinisColor.forest : TinisColor.paleGold.opacity(0.28), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
         }
     }
 }
@@ -1808,8 +2016,82 @@ struct DuelCard: View {
 
 // MARK: - Rankings and profile
 
+enum RankingCategory: String, CaseIterable, Identifiable {
+    case bestOverall = "Best Overall"
+    case dirtiest = "Dirtiest"
+    case bestValue = "Best Value"
+    case mostUnique = "Most Unique"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .bestOverall: return "star.fill"
+        case .dirtiest: return "drop.fill"
+        case .bestValue: return "dollarsign.circle.fill"
+        case .mostUnique: return "sparkles"
+        }
+    }
+
+    var heading: String {
+        switch self {
+        case .bestOverall: return "YOUR PERSONAL ORDER"
+        case .dirtiest: return "YOUR DIRTIEST MARTINIS"
+        case .bestValue: return "BEST VALUE · RATING ÷ PRICE"
+        case .mostUnique: return "YOUR MOST UNIQUE MARTINIS"
+        }
+    }
+
+    func sorted(_ venues: [MartiniVenue]) -> [MartiniVenue] {
+        venues.sorted { first, second in
+            switch self {
+            case .bestOverall:
+                return first.elo > second.elo
+            case .dirtiest:
+                return first.dirtiness > second.dirtiness
+            case .bestValue:
+                let firstValue = valueScore(for: first)
+                let secondValue = valueScore(for: second)
+                return firstValue == secondValue ? first.score > second.score : firstValue > secondValue
+            case .mostUnique:
+                return first.uniqueness > second.uniqueness
+            }
+        }
+    }
+
+    private func valueScore(for venue: MartiniVenue) -> Double {
+        guard let price = venue.price, price > 0 else { return -.infinity }
+        return venue.score / price
+    }
+
+    func primaryMetric(for venue: MartiniVenue) -> String {
+        switch self {
+        case .bestOverall:
+            return String(format: "%.1f", venue.score)
+        case .dirtiest:
+            return "\(min(5, max(1, Int(venue.dirtiness.rounded()) + 1)))/5"
+        case .bestValue:
+            guard let price = venue.price else { return "—" }
+            return price.formatted(.currency(code: "USD").precision(.fractionLength(0)))
+        case .mostUnique:
+            return "\(min(5, max(1, Int(venue.uniqueness.rounded()) + 1)))/5"
+        }
+    }
+
+    func metricCaption(for venue: MartiniVenue) -> String {
+        switch self {
+        case .bestOverall: return "RATING"
+        case .dirtiest: return "DIRTY"
+        case .bestValue: return "\(String(format: "%.1f", venue.score)) RATING"
+        case .mostUnique: return "UNIQUE"
+        }
+    }
+}
+
 struct RankingsView: View {
     @EnvironmentObject private var app: TinisStore
+    @State private var selectedCategory: RankingCategory = .bestOverall
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -1821,36 +2103,72 @@ struct RankingsView: View {
                             .foregroundStyle(TinisColor.cream)
                         Text("The fun stuff.").font(.system(size: 19, design: .serif)).foregroundStyle(TinisColor.cream.opacity(0.85))
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                            let categories = [("Best Overall", "star.fill"), ("Dirtiest", "drop.fill"), ("Coldest", "snowflake"), ("Most Unique", "sparkles")]
-                            ForEach(categories.indices, id: \.self) { index in
-                                let item = categories[index]
-                                VStack(alignment: .leading, spacing: 11) {
-                                    Image(systemName: item.1).font(.title2).foregroundStyle(TinisColor.gold)
-                                    Text(item.0).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(TinisColor.cream)
-                                    Text("View ranking  →").font(.system(size: 10, design: .rounded)).foregroundStyle(TinisColor.gold)
+                            ForEach(RankingCategory.allCases) { category in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        selectedCategory = category
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 11) {
+                                        Image(systemName: category.symbol).font(.title2).foregroundStyle(TinisColor.gold)
+                                        Text(category.rawValue).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(TinisColor.cream)
+                                        Text(selectedCategory == category ? "Viewing ranking" : "View ranking  →")
+                                            .font(.system(size: 10, design: .rounded))
+                                            .foregroundStyle(TinisColor.gold)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+                                    .padding(14)
+                                    .background(
+                                        LinearGradient(colors: [TinisColor.forest.opacity(0.9), TinisColor.forest.opacity(0.54)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: RoundedRectangle(cornerRadius: 13)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 13)
+                                            .stroke(selectedCategory == category ? TinisColor.gold : TinisColor.cream.opacity(0.16), lineWidth: selectedCategory == category ? 1.5 : 1)
+                                    )
                                 }
-                                .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
-                                .padding(14)
-                                .background(
-                                    LinearGradient(colors: [TinisColor.forest.opacity(0.9), TinisColor.forest.opacity(0.54)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                    in: RoundedRectangle(cornerRadius: 13)
-                                )
-                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.cream.opacity(0.16)))
+                                .buttonStyle(.plain)
                             }
                         }
-                        Text("YOUR PERSONAL ORDER").font(.caption.bold()).tracking(1.2).foregroundStyle(TinisColor.gold)
+                        Text(selectedCategory.heading).font(.caption.bold()).tracking(1.2).foregroundStyle(TinisColor.gold)
                         VStack(spacing: 1) {
-                            let rankedVenues = app.venues.sorted { $0.elo > $1.elo }
+                            let rankedVenues = selectedCategory.sorted(app.venues)
                             ForEach(rankedVenues.indices, id: \.self) { index in
                                 let venue = rankedVenues[index]
-                                HStack {
-                                    Text("\(index + 1)").foregroundStyle(TinisColor.gold).frame(width: 24)
-                                    VStack(alignment: .leading) { Text(venue.name); Text("Elo \(venue.elo)").font(.caption).foregroundStyle(TinisColor.cream.opacity(0.62)) }
-                                    Spacer()
-                                    Text(venue.score, format: .number.precision(.fractionLength(1))).font(.title3.monospacedDigit())
+                                Button {
+                                    app.selectedVenue = venue
+                                } label: {
+                                    HStack {
+                                        Text("\(index + 1)").foregroundStyle(TinisColor.gold).frame(width: 24)
+                                        VStack(alignment: .leading) {
+                                            Text(venue.name)
+                                            Text("\(venue.location) · \(venue.date)").font(.caption).foregroundStyle(TinisColor.cream.opacity(0.62))
+                                            if !venue.note.isEmpty {
+                                                Text(venue.note)
+                                                    .font(.system(size: 10, design: .serif))
+                                                    .foregroundStyle(TinisColor.cream.opacity(0.72))
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text(selectedCategory.primaryMetric(for: venue)).font(.title3.monospacedDigit())
+                                            Text(selectedCategory.metricCaption(for: venue))
+                                                .font(.system(size: 8, weight: .bold, design: .rounded))
+                                                .tracking(0.6)
+                                                .foregroundStyle(TinisColor.gold)
+                                        }
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(TinisColor.cream.opacity(0.42))
+                                    }
+                                    .foregroundStyle(TinisColor.cream)
+                                    .padding(15)
+                                    .background(TinisColor.forest.opacity(0.62))
+                                    .contentShape(Rectangle())
                                 }
-                                .foregroundStyle(TinisColor.cream).padding(15)
-                                .background(TinisColor.forest.opacity(0.62))
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Open \(venue.name) rating")
                             }
                         }.clipShape(RoundedRectangle(cornerRadius: 14))
                     }
@@ -1859,6 +2177,11 @@ struct RankingsView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .preferredColorScheme(.dark)
+            .sheet(item: $app.selectedVenue) {
+                VenueDetailView(venue: $0)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 }

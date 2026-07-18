@@ -18,6 +18,16 @@ struct TinisMembershipRow: Decodable {
     }
 }
 
+struct TinisClubFriend: Decodable, Equatable, Identifiable {
+    let id: UUID
+    let displayName: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+    }
+}
+
 struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
     let id: UUID
     let clubID: UUID
@@ -63,6 +73,12 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
     let chilliness: Double?
     let uniqueness: Double?
     let spiritForward: Double?
+    let spirit: String?
+    let garnish: String?
+    let servingStyle: String?
+    let price: Double?
+    let publicNote: String?
+    let companions: [String]?
     let latestVisit: String
 
     var id: UUID { venueID }
@@ -74,6 +90,9 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
         case city, region, score, dirtiness, chilliness, uniqueness
         case ratingCount = "rating_count"
         case spiritForward = "spirit_forward"
+        case spirit, garnish, price, companions
+        case servingStyle = "serving_style"
+        case publicNote = "public_note"
         case latestVisit = "latest_visit"
     }
 }
@@ -136,11 +155,32 @@ private struct LegacySaveRatingParameters: Encodable {
     }
 }
 
+private struct RatingDetailsUpdate: Encodable {
+    let publicNote: String?
+    let visitedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case publicNote = "public_note"
+        case visitedAt = "visited_at"
+    }
+}
+
+private struct RatingCompanionInsert: Encodable {
+    let ratingID: UUID
+    let companionID: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case ratingID = "rating_id"
+        case companionID = "companion_id"
+    }
+}
+
 @MainActor
 final class TinisBackend: ObservableObject {
     @Published private(set) var phase: TinisBackendPhase = .checking
     @Published private(set) var friendFeed: [TinisFriendFeedRow] = []
     @Published private(set) var leaderboard: [TinisLeaderboardRow] = []
+    @Published private(set) var clubFriends: [TinisClubFriend] = []
     @Published private(set) var photoURLs: [UUID: URL] = [:]
     @Published var errorMessage: String?
 
@@ -246,6 +286,8 @@ final class TinisBackend: ObservableObject {
         spirit: String,
         garnish: String,
         servingStyle: String,
+        visitDate: Date,
+        companionIDs: [UUID],
         photoData: Data?
     ) async throws -> String? {
         guard let client, let clubID else { return nil }
@@ -299,7 +341,32 @@ final class TinisBackend: ObservableObject {
                 .value
         }
 
-        var photoWarning: String?
+        var saveIssues: [String] = []
+        let trimmedNote = venue.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await client
+                .from("ratings")
+                .update(RatingDetailsUpdate(
+                    publicNote: trimmedNote.isEmpty ? nil : trimmedNote,
+                    visitedAt: ISO8601DateFormatter().string(from: visitDate)
+                ))
+                .eq("id", value: ratingID)
+                .execute()
+        } catch {
+            saveIssues.append("its date or note")
+        }
+
+        if !companionIDs.isEmpty {
+            do {
+                try await client
+                    .from("rating_companions")
+                    .insert(companionIDs.map { RatingCompanionInsert(ratingID: ratingID, companionID: $0) })
+                    .execute()
+            } catch {
+                saveIssues.append("friend tags")
+            }
+        }
+
         if let photoData {
             do {
                 let userID = try await client.auth.session.user.id
@@ -330,12 +397,13 @@ final class TinisBackend: ObservableObject {
                     throw error
                 }
             } catch {
-                photoWarning = "Your rating was saved, but the photo could not upload. You can add it again later."
+                saveIssues.append("the photo")
             }
         }
 
         await refreshSharedData()
-        return photoWarning
+        guard !saveIssues.isEmpty else { return nil }
+        return "Your rating was saved, but \(saveIssues.joined(separator: ", ")) could not be added. You can try again later."
     }
 
     func refreshSharedData() async {
@@ -366,6 +434,17 @@ final class TinisBackend: ObservableObject {
             friendFeed = newFeed
             leaderboard = newLeaderboard
             photoURLs = newPhotoURLs
+
+            if let currentUserID = try? await client.auth.session.user.id,
+               let friends: [TinisClubFriend] = try? await client
+                .from("profiles")
+                .select("id, display_name")
+                .neq("id", value: currentUserID)
+                .order("display_name")
+                .execute()
+                .value {
+                clubFriends = friends
+            }
         } catch {
             errorMessage = "The club could not refresh just now. Your saved data is still safe."
         }

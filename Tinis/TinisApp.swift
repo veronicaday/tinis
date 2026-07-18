@@ -310,6 +310,11 @@ struct TinisRootView: View {
         .onChange(of: backend.leaderboard, initial: true) { _, rows in
             app.syncFromBackend(rows)
         }
+        .onChange(of: backend.currentDisplayName, initial: true) { _, displayName in
+            if let displayName, !displayName.isEmpty {
+                app.firstName = displayName
+            }
+        }
     }
 }
 
@@ -348,102 +353,22 @@ struct MartiniArtwork: View {
     var variant = 0
     var showOlives = true
 
-    private var glow: Color {
-        [Color(hex: 0xB76D32), Color(hex: 0x82955A), Color(hex: 0x9B5540), Color(hex: 0xA88C4B)][variant % 4]
-    }
-
     var body: some View {
         GeometryReader { geo in
-            let side = min(geo.size.width, geo.size.height)
-            let glassWidth = side * 0.67
-            let bowlHeight = side * 0.34
-            let stemHeight = side * 0.31
+            let isWideCard = geo.size.width / max(geo.size.height, 1) > 1.45
+
             ZStack {
-                LinearGradient(
-                    colors: [Color.black, TinisColor.darkestForest, Color.black.opacity(0.92)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                Circle()
-                    .fill(glow.opacity(0.58))
-                    .frame(width: side * 0.58)
-                    .blur(radius: side * 0.19)
-                    .offset(x: side * 0.28, y: -side * 0.25)
-                Circle()
-                    .fill(TinisColor.gold.opacity(0.20))
-                    .frame(width: side * 0.36)
-                    .blur(radius: side * 0.11)
-                    .offset(x: -side * 0.34, y: side * 0.25)
-                ForEach(0..<5, id: \.self) { index in
-                    Circle()
-                        .fill(index.isMultiple(of: 2) ? TinisColor.paleGold.opacity(0.45) : glow.opacity(0.38))
-                        .frame(width: side * CGFloat(0.035 + Double(index) * 0.01))
-                        .blur(radius: side * 0.018)
-                        .offset(
-                            x: side * CGFloat(-0.43 + Double(index) * 0.22),
-                            y: side * CGFloat(-0.37 + Double(index % 3) * 0.16)
-                        )
-                }
-
-                VStack(spacing: 0) {
-                    ZStack(alignment: .top) {
-                        MartiniBowl()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.34), TinisColor.paleGold.opacity(0.26), Color.white.opacity(0.06)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                        MartiniBowl()
-                            .stroke(Color.white.opacity(0.76), lineWidth: max(0.8, side * 0.006))
-                        Ellipse()
-                            .stroke(Color.white.opacity(0.72), lineWidth: max(0.7, side * 0.005))
-                            .frame(width: glassWidth, height: side * 0.045)
-                            .offset(y: -side * 0.017)
-                        Ellipse()
-                            .fill(TinisColor.paleGold.opacity(0.28))
-                            .frame(width: glassWidth * 0.88, height: side * 0.033)
-                            .offset(y: side * 0.035)
-
-                        if showOlives {
-                            ZStack {
-                                Capsule()
-                                    .fill(TinisColor.paleGold.opacity(0.85))
-                                    .frame(width: glassWidth * 0.72, height: max(1, side * 0.009))
-                                HStack(spacing: -side * 0.018) {
-                                    ForEach(0..<3, id: \.self) { _ in
-                                        Circle()
-                                            .fill(
-                                                RadialGradient(
-                                                    colors: [Color(hex: 0xB4A455), Color(hex: 0x59612D)],
-                                                    center: .topLeading,
-                                                    startRadius: 0,
-                                                    endRadius: side * 0.075
-                                                )
-                                            )
-                                            .frame(width: side * 0.105, height: side * 0.105)
-                                            .overlay(Circle().fill(Color(hex: 0x6A2E25)).frame(width: side * 0.025))
-                                    }
-                                }
-                            }
-                            .rotationEffect(.degrees(-18))
-                            .offset(x: glassWidth * 0.02, y: bowlHeight * 0.45)
-                        }
-                    }
-                    .frame(width: glassWidth, height: bowlHeight)
-
-                    Capsule()
-                        .fill(LinearGradient(colors: [Color.white.opacity(0.82), Color.white.opacity(0.18)], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(1.5, side * 0.012), height: stemHeight)
-                    Ellipse()
-                        .fill(Color.white.opacity(0.34))
-                        .overlay(Ellipse().stroke(Color.white.opacity(0.65), lineWidth: max(0.7, side * 0.004)))
-                        .frame(width: glassWidth * 0.50, height: side * 0.045)
-                }
-                .shadow(color: TinisColor.paleGold.opacity(0.28), radius: side * 0.04)
-                .offset(y: side * 0.07)
+                TinisColor.deepForest
+                Image("MartiniLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(
+                        width: isWideCard ? min(geo.size.width, geo.size.height * 1.95) : geo.size.width,
+                        height: isWideCard ? geo.size.height * 1.95 : geo.size.height
+                    )
+                    .offset(y: isWideCard ? geo.size.height * 0.28 : 0)
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .clipped()
         .accessibilityHidden(true)
@@ -2188,7 +2113,10 @@ struct RankingsView: View {
 
 struct ProfileView: View {
     @EnvironmentObject private var app: TinisStore
+    @EnvironmentObject private var backend: TinisBackend
     @State private var topFilter: ProfileTopFilter = .topRated
+    @State private var isShowingSettings = false
+    @State private var isEditingProfile = false
 
     var body: some View {
         NavigationStack {
@@ -2197,9 +2125,25 @@ struct ProfileView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         HStack {
-                            Image(systemName: "gearshape")
+                            Button {
+                                isShowingSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Settings")
                             Spacer()
-                            Image(systemName: "pencil")
+                            Button {
+                                isEditingProfile = true
+                            } label: {
+                                Image(systemName: "pencil")
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Edit profile")
                         }
                         .font(.system(size: 17, weight: .regular))
                         .foregroundStyle(TinisColor.cream)
@@ -2294,7 +2238,323 @@ struct ProfileView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $isShowingSettings) {
+                ProfileSettingsView()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $isEditingProfile) {
+                EditProfileView()
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+            }
         }
+    }
+}
+
+struct EditProfileView: View {
+    @EnvironmentObject private var app: TinisStore
+    @EnvironmentObject private var backend: TinisBackend
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var displayName = ""
+    @State private var isSaving = false
+    @State private var saveError: String?
+    @State private var didLoad = false
+
+    private var trimmedName: String {
+        displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        !isSaving && (1...40).contains(trimmedName.count)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                TinisColor.paper.ignoresSafeArea()
+                VStack(spacing: 22) {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(hex: 0xD75462), Color(hex: 0xD28B3B)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 92, height: 92)
+                        .overlay(
+                            Text(String(trimmedName.prefix(1)).uppercased())
+                                .font(.system(size: 38, design: .serif))
+                                .foregroundStyle(.white)
+                        )
+                        .overlay(Circle().stroke(TinisColor.gold.opacity(0.7), lineWidth: 1.5))
+                        .shadow(color: .black.opacity(0.14), radius: 16, y: 7)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("DISPLAY NAME")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .tracking(1.2)
+                            .foregroundStyle(TinisColor.moss)
+                        TextField("Your name", text: $displayName)
+                            .font(.system(size: 17, design: .rounded))
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .padding(14)
+                            .background(.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(TinisColor.line))
+                            .onChange(of: displayName) { _, newValue in
+                                if newValue.count > 40 {
+                                    displayName = String(newValue.prefix(40))
+                                }
+                            }
+                        HStack {
+                            Text("This is how your friends see you.")
+                            Spacer()
+                            Text("\(displayName.count)/40")
+                        }
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(TinisColor.ink.opacity(0.48))
+                    }
+
+                    if let saveError {
+                        Text(saveError)
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(Color(hex: 0xA54F45))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Button {
+                        isSaving = true
+                        saveError = nil
+                        Task {
+                            let didSave = await backend.updateDisplayName(trimmedName)
+                            if didSave {
+                                app.firstName = trimmedName
+                                dismiss()
+                            } else {
+                                saveError = backend.errorMessage ?? "Your profile could not be updated."
+                                isSaving = false
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 9) {
+                            if isSaving { ProgressView().tint(TinisColor.cream) }
+                            Text(isSaving ? "Saving…" : "Save profile")
+                        }
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.cream)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(canSave ? TinisColor.forest : TinisColor.forest.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSave)
+                    Spacer()
+                }
+                .padding(22)
+            }
+            .navigationTitle("Edit profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(TinisColor.paper, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                guard !didLoad else { return }
+                displayName = backend.currentDisplayName ?? app.firstName
+                didLoad = true
+            }
+        }
+    }
+}
+
+struct ProfileSettingsView: View {
+    @EnvironmentObject private var backend: TinisBackend
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var copiedInviteCode = false
+    @State private var isRefreshing = false
+    @State private var didRefresh = false
+    @State private var isConfirmingSignOut = false
+
+    private var memberCount: Int {
+        backend.clubFriends.count + 1
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                TinisColor.paper.ignoresSafeArea()
+                ScrollView {
+                    VStack(spacing: 18) {
+                        SettingsPanel(title: "YOUR CLUB") {
+                            SettingsValueRow(
+                                icon: "lock.fill",
+                                title: "tini’s martini club",
+                                detail: "Private · \(memberCount) member\(memberCount == 1 ? "" : "s")"
+                            )
+                            Divider()
+                            HStack(spacing: 13) {
+                                Image(systemName: "ticket.fill")
+                                    .foregroundStyle(TinisColor.moss)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Invite code")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    Text("DIRTY")
+                                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                                        .tracking(3)
+                                        .foregroundStyle(TinisColor.forest)
+                                }
+                                Spacer()
+                                Button {
+                                    UIPasteboard.general.string = "DIRTY"
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        copiedInviteCode = true
+                                    }
+                                } label: {
+                                    Label(copiedInviteCode ? "Copied" : "Copy", systemImage: copiedInviteCode ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .background(TinisColor.paleGold.opacity(0.42), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            Divider()
+                            ShareLink(item: "Join my private tini’s martini club. Use invite code DIRTY.") {
+                                SettingsActionLabel(icon: "square.and.arrow.up", title: "Share club invite")
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        SettingsPanel(title: "DATA") {
+                            Button {
+                                isRefreshing = true
+                                didRefresh = false
+                                Task {
+                                    await backend.refreshSharedData()
+                                    isRefreshing = false
+                                    didRefresh = true
+                                }
+                            } label: {
+                                HStack {
+                                    SettingsActionLabel(icon: "arrow.clockwise", title: isRefreshing ? "Refreshing club…" : "Refresh club data")
+                                    Spacer()
+                                    if isRefreshing {
+                                        ProgressView().tint(TinisColor.forest)
+                                    } else if didRefresh {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(TinisColor.moss)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isRefreshing)
+                        }
+
+                        SettingsPanel(title: "ABOUT") {
+                            SettingsValueRow(icon: "wineglass", title: "tini’s", detail: "Version 1.0")
+                            Divider()
+                            SettingsValueRow(icon: "hand.raised.fill", title: "Privacy", detail: "Only club members can see ratings")
+                        }
+
+                        Button(role: .destructive) {
+                            isConfirmingSignOut = true
+                        } label: {
+                            Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color(hex: 0xA54F45))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: 0xA54F45).opacity(0.28)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(TinisColor.paper, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .alert("Sign out of tini’s?", isPresented: $isConfirmingSignOut) {
+                Button("Cancel", role: .cancel) {}
+                Button("Sign out", role: .destructive) {
+                    Task {
+                        await backend.signOut()
+                        dismiss()
+                    }
+                }
+            } message: {
+                Text("You can sign back in anytime with your email.")
+            }
+        }
+    }
+}
+
+struct SettingsPanel<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.2)
+                .foregroundStyle(TinisColor.moss)
+            VStack(spacing: 12) { content }
+                .foregroundStyle(TinisColor.ink)
+                .padding(15)
+                .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(TinisColor.line.opacity(0.9)))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SettingsValueRow: View {
+    let icon: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: icon)
+                .foregroundStyle(TinisColor.moss)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 14, weight: .semibold, design: .rounded))
+                Text(detail).font(.system(size: 11, design: .rounded)).foregroundStyle(TinisColor.ink.opacity(0.54))
+            }
+            Spacer()
+        }
+    }
+}
+
+struct SettingsActionLabel: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: icon)
+                .foregroundStyle(TinisColor.moss)
+                .frame(width: 24)
+            Text(title).font(.system(size: 14, weight: .semibold, design: .rounded))
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(TinisColor.ink.opacity(0.34))
+        }
+        .foregroundStyle(TinisColor.ink)
+        .contentShape(Rectangle())
     }
 }
 

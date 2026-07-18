@@ -175,12 +175,21 @@ private struct RatingCompanionInsert: Encodable {
     }
 }
 
+private struct ProfileUpdate: Encodable {
+    let displayName: String
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+    }
+}
+
 @MainActor
 final class TinisBackend: ObservableObject {
     @Published private(set) var phase: TinisBackendPhase = .checking
     @Published private(set) var friendFeed: [TinisFriendFeedRow] = []
     @Published private(set) var leaderboard: [TinisLeaderboardRow] = []
     @Published private(set) var clubFriends: [TinisClubFriend] = []
+    @Published private(set) var currentDisplayName: String?
     @Published private(set) var photoURLs: [UUID: URL] = [:]
     @Published var errorMessage: String?
 
@@ -260,6 +269,49 @@ final class TinisBackend: ObservableObject {
     }
 
     func useDifferentEmail() {
+        errorMessage = nil
+        phase = .signedOut
+    }
+
+    func updateDisplayName(_ name: String) async -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...40).contains(trimmedName.count) else {
+            errorMessage = "Your display name must be between 1 and 40 characters."
+            return false
+        }
+
+        guard let client else {
+            currentDisplayName = trimmedName
+            return true
+        }
+
+        errorMessage = nil
+        do {
+            let userID = try await client.auth.session.user.id
+            try await client
+                .from("profiles")
+                .update(ProfileUpdate(displayName: trimmedName))
+                .eq("id", value: userID)
+                .execute()
+            currentDisplayName = trimmedName
+            await refreshSharedData()
+            return true
+        } catch {
+            errorMessage = "Your profile could not be updated. Please try again."
+            return false
+        }
+    }
+
+    func signOut() async {
+        if let client {
+            try? await client.auth.signOut()
+        }
+        clubID = nil
+        friendFeed = []
+        leaderboard = []
+        clubFriends = []
+        currentDisplayName = nil
+        photoURLs = [:]
         errorMessage = nil
         phase = .signedOut
     }
@@ -436,14 +488,14 @@ final class TinisBackend: ObservableObject {
             photoURLs = newPhotoURLs
 
             if let currentUserID = try? await client.auth.session.user.id,
-               let friends: [TinisClubFriend] = try? await client
+               let profiles: [TinisClubFriend] = try? await client
                 .from("profiles")
                 .select("id, display_name")
-                .neq("id", value: currentUserID)
                 .order("display_name")
                 .execute()
                 .value {
-                clubFriends = friends
+                currentDisplayName = profiles.first(where: { $0.id == currentUserID })?.displayName
+                clubFriends = profiles.filter { $0.id != currentUserID }
             }
         } catch {
             errorMessage = "The club could not refresh just now. Your saved data is still safe."

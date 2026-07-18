@@ -168,6 +168,10 @@ private struct TinisPlaceSearchDrawer: View {
         .padding(.top, 8)
         .padding(.bottom, 12)
         .background(TinisColor.cream)
+        .task {
+            try? await Task.sleep(for: .milliseconds(80))
+            searchIsFocused = true
+        }
         .task(id: query) {
             await findSuggestions(for: query)
         }
@@ -430,8 +434,8 @@ extension View {
                     onSelection: onSelection,
                     onError: onError
                 )
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
+                .presentationDetents([.height(410)])
+                .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(28)
                 .presentationBackground(TinisColor.cream)
             }

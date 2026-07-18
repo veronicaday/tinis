@@ -33,6 +33,7 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
     let uniqueness: Double?
     let spiritForward: Double?
     let publicNote: String?
+    let photoPath: String?
     let createdAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -45,6 +46,7 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
         case city, region, score, dirtiness, chilliness, uniqueness
         case spiritForward = "spirit_forward"
         case publicNote = "public_note"
+        case photoPath = "photo_path"
         case createdAt = "created_at"
     }
 }
@@ -106,11 +108,40 @@ private struct SaveRatingParameters: Encodable {
     }
 }
 
+private struct LegacySaveRatingParameters: Encodable {
+    let clubID: UUID
+    let venueName: String
+    let location: String
+    let score: Double
+    let dirtiness: Double
+    let chilliness: Double
+    let uniqueness: Double
+    let spiritForward: Double
+    let spirit: String
+    let garnish: String
+    let price: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case clubID = "p_club_id"
+        case venueName = "p_venue_name"
+        case location = "p_location"
+        case score = "p_score"
+        case dirtiness = "p_dirtiness"
+        case chilliness = "p_chilliness"
+        case uniqueness = "p_uniqueness"
+        case spiritForward = "p_spirit_forward"
+        case spirit = "p_spirit"
+        case garnish = "p_garnish"
+        case price = "p_price"
+    }
+}
+
 @MainActor
 final class TinisBackend: ObservableObject {
     @Published private(set) var phase: TinisBackendPhase = .checking
     @Published private(set) var friendFeed: [TinisFriendFeedRow] = []
     @Published private(set) var leaderboard: [TinisLeaderboardRow] = []
+    @Published private(set) var photoURLs: [UUID: URL] = [:]
     @Published var errorMessage: String?
 
     private let client: SupabaseClient?
@@ -120,6 +151,13 @@ final class TinisBackend: ObservableObject {
     var isReady: Bool { phase == .ready && clubID != nil }
 
     init(bundle: Bundle = .main) {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+            client = nil
+            phase = .unavailable
+            return
+        }
+#endif
         guard
             let urlString = bundle.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
             let url = URL(string: urlString),
@@ -207,9 +245,10 @@ final class TinisBackend: ObservableObject {
         price: String,
         spirit: String,
         garnish: String,
-        servingStyle: String
-    ) async throws {
-        guard let client, let clubID else { return }
+        servingStyle: String,
+        photoData: Data?
+    ) async throws -> String? {
+        guard let client, let clubID else { return nil }
 
         let parameters = SaveRatingParameters(
             clubID: clubID,
@@ -226,11 +265,77 @@ final class TinisBackend: ObservableObject {
             price: Double(price)
         )
 
-        let _: UUID = try await client
-            .rpc("save_rating", params: parameters)
-            .execute()
-            .value
+        let ratingID: UUID
+        do {
+            ratingID = try await client
+                .rpc("save_rating", params: parameters)
+                .execute()
+                .value
+        } catch {
+            let failure = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+            guard
+                failure.contains("p_serving_style") ||
+                failure.contains("function") ||
+                failure.contains("schema cache")
+            else {
+                throw error
+            }
+            let legacyParameters = LegacySaveRatingParameters(
+                clubID: clubID,
+                venueName: venue.name,
+                location: venue.location,
+                score: venue.score,
+                dirtiness: venue.dirtiness,
+                chilliness: venue.chilliness,
+                uniqueness: venue.uniqueness,
+                spiritForward: venue.spiritForward,
+                spirit: spirit.lowercased(),
+                garnish: garnish.lowercased(),
+                price: Double(price)
+            )
+            ratingID = try await client
+                .rpc("save_rating", params: legacyParameters)
+                .execute()
+                .value
+        }
+
+        var photoWarning: String?
+        if let photoData {
+            do {
+                let userID = try await client.auth.session.user.id
+                let photoPath = [
+                    clubID.uuidString.lowercased(),
+                    userID.uuidString.lowercased(),
+                    "\(ratingID.uuidString.lowercased()).jpg"
+                ].joined(separator: "/")
+
+                try await client.storage
+                    .from("rating-photos")
+                    .upload(
+                        photoPath,
+                        data: photoData,
+                        options: FileOptions(contentType: "image/jpeg")
+                    )
+
+                do {
+                    try await client
+                        .from("ratings")
+                        .update(["photo_path": photoPath])
+                        .eq("id", value: ratingID)
+                        .execute()
+                } catch {
+                    _ = try? await client.storage
+                        .from("rating-photos")
+                        .remove(paths: [photoPath])
+                    throw error
+                }
+            } catch {
+                photoWarning = "Your rating was saved, but the photo could not upload. You can add it again later."
+            }
+        }
+
         await refreshSharedData()
+        return photoWarning
     }
 
     func refreshSharedData() async {
@@ -251,8 +356,16 @@ final class TinisBackend: ObservableObject {
                 .value
 
             let (newFeed, newLeaderboard) = try await (feedRequest, leaderboardRequest)
+            var newPhotoURLs: [UUID: URL] = [:]
+            for row in newFeed {
+                guard let photoPath = row.photoPath else { continue }
+                newPhotoURLs[row.id] = try? await client.storage
+                    .from("rating-photos")
+                    .createSignedURL(path: photoPath, expiresIn: 60 * 60)
+            }
             friendFeed = newFeed
             leaderboard = newLeaderboard
+            photoURLs = newPhotoURLs
         } catch {
             errorMessage = "The club could not refresh just now. Your saved data is still safe."
         }

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 @main
 struct TinisApp: App {
@@ -50,6 +51,7 @@ struct FriendActivity: Identifiable {
     let rankingUpdate: String
     let avatarHex: UInt
     let artworkVariant: Int
+    let photoURL: URL?
 }
 
 enum ProfileTopFilter: String, CaseIterable, Identifiable {
@@ -130,6 +132,14 @@ final class TinisStore: ObservableObject {
         .init(name: "The Savoy", location: "London, UK", score: 8.3, ratingCount: 4, date: "Feb 9, 2024", trait: "silky, perfectly cold", dirtiness: 1.4, chilliness: 3.9, uniqueness: 1.7, spiritForward: 2.3, elo: 1558),
         .init(name: "Clover Club", location: "Brooklyn, NY", score: 8.1, ratingCount: 3, date: "Jan 20, 2024", trait: "soft, lemony", dirtiness: 3.8, chilliness: 2.2, uniqueness: 4.0, spiritForward: 1.2, elo: 1531)
     ]
+
+    init() {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+            hasOnboarded = true
+        }
+#endif
+    }
 
     var topVenue: MartiniVenue { venues.sorted { $0.score > $1.score }.first! }
 
@@ -505,10 +515,10 @@ struct HomeView: View {
     @EnvironmentObject private var backend: TinisBackend
 
     private let demoActivity = [
-        FriendActivity(friend: "Sarah", initials: "S", venueName: "Bemelmans Bar", location: "New York, NY", score: 9.2, trait: "Very cold · lightly dirty", note: "Perfectly cold and exactly dirty enough.", time: "12 min ago", rankingUpdate: "New #1", avatarHex: 0xC85B68, artworkVariant: 0),
-        FriendActivity(friend: "Alex", initials: "A", venueName: "Dante", location: "New York, NY", score: 8.4, trait: "Bright · classic", note: "A crisp one. The lemon twist really works.", time: "1 hr ago", rankingUpdate: "Moved to #2", avatarHex: 0x5A9181, artworkVariant: 1),
-        FriendActivity(friend: "Maya", initials: "M", venueName: "Clover Club", location: "Brooklyn, NY", score: 8.8, trait: "Silky · olive", note: "Would immediately order another.", time: "Last night", rankingUpdate: "New entry", avatarHex: 0xA475B5, artworkVariant: 2),
-        FriendActivity(friend: "Jack", initials: "J", venueName: "Employees Only", location: "New York, NY", score: 7.5, trait: "Spirit-forward · clean", note: "Strong, serious, and maybe a little too warm.", time: "Yesterday", rankingUpdate: "Now #4", avatarHex: 0xB27645, artworkVariant: 3)
+        FriendActivity(friend: "Sarah", initials: "S", venueName: "Bemelmans Bar", location: "New York, NY", score: 9.2, trait: "Very cold · lightly dirty", note: "Perfectly cold and exactly dirty enough.", time: "12 min ago", rankingUpdate: "New #1", avatarHex: 0xC85B68, artworkVariant: 0, photoURL: nil),
+        FriendActivity(friend: "Alex", initials: "A", venueName: "Dante", location: "New York, NY", score: 8.4, trait: "Bright · classic", note: "A crisp one. The lemon twist really works.", time: "1 hr ago", rankingUpdate: "Moved to #2", avatarHex: 0x5A9181, artworkVariant: 1, photoURL: nil),
+        FriendActivity(friend: "Maya", initials: "M", venueName: "Clover Club", location: "Brooklyn, NY", score: 8.8, trait: "Silky · olive", note: "Would immediately order another.", time: "Last night", rankingUpdate: "New entry", avatarHex: 0xA475B5, artworkVariant: 2, photoURL: nil),
+        FriendActivity(friend: "Jack", initials: "J", venueName: "Employees Only", location: "New York, NY", score: 7.5, trait: "Spirit-forward · clean", note: "Strong, serious, and maybe a little too warm.", time: "Yesterday", rankingUpdate: "Now #4", avatarHex: 0xB27645, artworkVariant: 3, photoURL: nil)
     ]
 
     private var activity: [FriendActivity] {
@@ -528,7 +538,8 @@ struct HomeView: View {
                 time: "Recently",
                 rankingUpdate: "New rating",
                 avatarHex: [0xC85B68, 0x5A9181, 0xA475B5, 0xB27645][index % 4],
-                artworkVariant: index % 4
+                artworkVariant: index % 4,
+                photoURL: backend.photoURLs[row.id]
             )
         }
     }
@@ -635,7 +646,7 @@ struct FriendActivityCard: View {
                 }
 
                 ZStack(alignment: .bottomLeading) {
-                    MartiniArtwork(variant: activity.artworkVariant)
+                    FriendActivityArtwork(activity: activity)
                         .frame(height: 145)
                     LinearGradient(colors: [.clear, Color.black.opacity(0.82)], startPoint: .center, endPoint: .bottom)
                     VStack(alignment: .leading, spacing: 2) {
@@ -676,6 +687,31 @@ struct FriendActivityCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(activity.friend) rated \(activity.venueName) \(activity.score, format: .number.precision(.fractionLength(1))). \(activity.rankingUpdate)")
+    }
+}
+
+struct FriendActivityArtwork: View {
+    let activity: FriendActivity
+
+    var body: some View {
+        Group {
+            if let photoURL = activity.photoURL {
+                AsyncImage(url: photoURL, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        MartiniArtwork(variant: activity.artworkVariant)
+                    }
+                }
+            } else {
+                MartiniArtwork(variant: activity.artworkVariant)
+            }
+        }
+        .clipped()
+        .accessibilityLabel(activity.photoURL == nil ? "Martini illustration" : "Photo of the martini")
     }
 }
 
@@ -983,8 +1019,11 @@ struct AddMartiniView: View {
     @State private var spirit = "Gin"
     @State private var garnish = "Olive"
     @State private var servingStyle = "Up"
+    @State private var photoData: Data?
     @State private var traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
     @State private var isSaving = false
+    @State private var saveNotice: String?
+    @State private var didSaveDespiteNotice = false
 
     var body: some View {
         NavigationStack {
@@ -994,7 +1033,7 @@ struct AddMartiniView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         ProgressLine(stage: stage)
-                        if stage == 0 { BasicsStep(venueName: $venueName, location: $location, score: $score, price: $price, spirit: $spirit, garnish: $garnish, servingStyle: $servingStyle) }
+                        if stage == 0 { BasicsStep(venueName: $venueName, location: $location, score: $score, price: $price, spirit: $spirit, garnish: $garnish, servingStyle: $servingStyle, photoData: $photoData) }
                         if stage == 1 { TraitsStep(traits: $traits, spirit: spirit, garnish: garnish, servingStyle: servingStyle) }
                         if stage == 2 { DuelStep(newScore: score, comparison: app.topVenue) }
                         Button {
@@ -1017,13 +1056,21 @@ struct AddMartiniView: View {
                                 Task {
                                     do {
                                         if backend.isReady {
-                                            try await backend.saveRating(
+                                            let photoWarning = try await backend.saveRating(
                                                 newVenue,
                                                 price: price,
                                                 spirit: spirit,
                                                 garnish: garnish,
-                                                servingStyle: servingStyle
+                                                servingStyle: servingStyle,
+                                                photoData: photoData
                                             )
+                                            if let photoWarning {
+                                                app.add(newVenue)
+                                                resetForm()
+                                                didSaveDespiteNotice = true
+                                                saveNotice = photoWarning
+                                                return
+                                            }
                                         }
                                         app.add(newVenue)
                                         resetForm()
@@ -1031,13 +1078,17 @@ struct AddMartiniView: View {
                                             app.selectedTab = 3
                                         }
                                     } catch {
-                                        backend.errorMessage = "Your martini could not be saved. Please try again."
+                                        didSaveDespiteNotice = false
+                                        saveNotice = "Your martini could not be saved. Please try again."
                                         isSaving = false
                                     }
                                 }
                             }
                         } label: {
-                            Text(stage == 2 ? "Save martini" : stage == 1 ? "Next: quick ranking" : "Next: traits & details")
+                            HStack(spacing: 9) {
+                                if isSaving { ProgressView().tint(.white) }
+                                Text(isSaving ? (photoData == nil ? "Saving martini…" : "Uploading photo…") : stage == 2 ? "Save martini" : stage == 1 ? "Next: quick ranking" : "Next: traits & details")
+                            }
                                 .frame(maxWidth: .infinity)
                                 .font(.headline)
                                 .padding(.vertical, 17)
@@ -1057,6 +1108,21 @@ struct AddMartiniView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.light, for: .navigationBar)
             .preferredColorScheme(.light)
+            .alert(didSaveDespiteNotice ? "Rating saved" : "Couldn’t save martini", isPresented: Binding(
+                get: { saveNotice != nil },
+                set: { if !$0 { saveNotice = nil } }
+            )) {
+                Button(didSaveDespiteNotice ? "View rankings" : "OK") {
+                    saveNotice = nil
+                    if didSaveDespiteNotice {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            app.selectedTab = 3
+                        }
+                    }
+                }
+            } message: {
+                Text(saveNotice ?? "")
+            }
         }
     }
 
@@ -1069,6 +1135,7 @@ struct AddMartiniView: View {
         spirit = "Gin"
         garnish = "Olive"
         servingStyle = "Up"
+        photoData = nil
         traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
         isSaving = false
     }
@@ -1101,21 +1168,10 @@ struct BasicsStep: View {
     @Binding var spirit: String
     @Binding var garnish: String
     @Binding var servingStyle: String
+    @Binding var photoData: Data?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            MartiniArtwork(variant: 0)
-                .frame(maxWidth: .infinity)
-                .frame(height: 205)
-                .clipShape(RoundedRectangle(cornerRadius: 15))
-                .overlay(alignment: .bottomTrailing) {
-                    ZStack {
-                        Circle().fill(TinisColor.forest)
-                        Image(systemName: "camera.fill").font(.system(size: 14)).foregroundStyle(.white)
-                    }
-                    .frame(width: 38, height: 38)
-                    .padding(12)
-                }
-                .overlay(RoundedRectangle(cornerRadius: 15).stroke(TinisColor.gold.opacity(0.3)))
+            MartiniPhotoPicker(photoData: $photoData)
             InfoCard(title: "WHERE WERE YOU?") {
                 HStack {
                     Image(systemName: "mappin.and.ellipse").foregroundStyle(TinisColor.moss)
@@ -1165,6 +1221,138 @@ struct BasicsStep: View {
             .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
         }
+    }
+}
+
+struct MartiniPhotoPicker: View {
+    @Binding var photoData: Data?
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    private var image: UIImage? {
+        photoData.flatMap(UIImage.init(data:))
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    MartiniArtwork(variant: 0)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 215)
+            .clipped()
+
+            LinearGradient(
+                colors: [.clear, Color.black.opacity(image == nil ? 0.48 : 0.72)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $selectedItem, matching: .images) {
+                    Label(image == nil ? "Add a martini photo" : "Change photo", systemImage: "camera.fill")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.cream)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .background(TinisColor.forest.opacity(0.94), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                if image != nil {
+                    Button {
+                        selectedItem = nil
+                        photoData = nil
+                        errorMessage = nil
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(TinisColor.cream)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.54), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove photo")
+                }
+
+                Spacer()
+            }
+            .padding(12)
+
+            if isLoading {
+                ZStack {
+                    Color.black.opacity(0.34)
+                    ProgressView("Preparing photo…")
+                        .tint(.white)
+                        .foregroundStyle(.white)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                }
+            }
+        }
+        .frame(height: 215)
+        .clipShape(RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(TinisColor.gold.opacity(0.32)))
+        .overlay(alignment: .topLeading) {
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(TinisColor.cream)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.red.opacity(0.78), in: Capsule())
+                    .padding(10)
+            }
+        }
+        .onChange(of: selectedItem) { _, newItem in
+            guard let newItem else { return }
+            isLoading = true
+            errorMessage = nil
+            Task {
+                do {
+                    guard
+                        let originalData = try await newItem.loadTransferable(type: Data.self),
+                        let originalImage = UIImage(data: originalData),
+                        let preparedData = originalImage.tinisUploadData()
+                    else {
+                        throw MartiniPhotoError.couldNotRead
+                    }
+                    photoData = preparedData
+                } catch {
+                    selectedItem = nil
+                    errorMessage = "That photo could not be opened."
+                }
+                isLoading = false
+            }
+        }
+    }
+}
+
+private enum MartiniPhotoError: Error {
+    case couldNotRead
+}
+
+private extension UIImage {
+    func tinisUploadData(maxDimension: CGFloat = 1600, quality: CGFloat = 0.82) -> Data? {
+        let longestSide = max(size.width, size.height)
+        let scale = min(1, maxDimension / max(longestSide, 1))
+        let targetSize = CGSize(
+            width: max(1, (size.width * scale).rounded()),
+            height: max(1, (size.height * scale).rounded())
+        )
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let normalizedImage = UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return normalizedImage.jpegData(compressionQuality: quality)
     }
 }
 

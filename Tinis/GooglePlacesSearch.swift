@@ -166,7 +166,7 @@ private struct TinisPlaceSearchDrawer: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.bottom, 26)
         .background(TinisColor.cream)
         .task {
             try? await Task.sleep(for: .milliseconds(80))
@@ -417,6 +417,72 @@ extension String {
     fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
+@MainActor
+private struct TinisPlaceSearchOverlayModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let initialQuery: String
+    let onSelection: (GooglePlaceSelection) -> Void
+    let onError: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(isPresented: $isPresented) {
+                TinisPlaceSearchCover(
+                    isPresented: $isPresented,
+                    initialQuery: initialQuery,
+                    onSelection: onSelection,
+                    onError: onError
+                )
+                .presentationBackground(.clear)
+            }
+    }
+}
+
+@MainActor
+private struct TinisPlaceSearchCover: View {
+    @Binding var isPresented: Bool
+    let initialQuery: String
+    let onSelection: (GooglePlaceSelection) -> Void
+    let onError: (String) -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { isPresented = false }
+                    .accessibilityHidden(true)
+
+                TinisPlaceSearchDrawer(
+                    isPresented: $isPresented,
+                    initialQuery: initialQuery,
+                    onSelection: onSelection,
+                    onError: onError
+                )
+                .frame(height: drawerHeight(for: geometry.size.height))
+                .frame(maxWidth: .infinity)
+                .background(TinisColor.cream)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 28,
+                        bottomLeadingRadius: 0,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 28,
+                        style: .continuous
+                    )
+                )
+                .shadow(color: Color.black.opacity(0.2), radius: 24, y: -6)
+            }
+        }
+        .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private func drawerHeight(for availableHeight: CGFloat) -> CGFloat {
+        min(445, max(290, availableHeight * 0.58))
+    }
+}
+
 extension View {
     @MainActor
     @ViewBuilder
@@ -427,18 +493,14 @@ extension View {
         onError: @escaping (String) -> Void
     ) -> some View {
         if TinisGooglePlaces.isConfigured {
-            sheet(isPresented: show) {
-                TinisPlaceSearchDrawer(
+            modifier(
+                TinisPlaceSearchOverlayModifier(
                     isPresented: show,
                     initialQuery: initialQuery,
                     onSelection: onSelection,
                     onError: onError
                 )
-                .presentationDetents([.height(410)])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(28)
-                .presentationBackground(TinisColor.cream)
-            }
+            )
         } else {
             self
         }

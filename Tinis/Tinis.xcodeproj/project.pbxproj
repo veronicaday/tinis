@@ -11,6 +11,7 @@
 		B10000000000000000000001 /* TinisBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* TinisBackend.swift */; };
 		B10000000000000000000002 /* TinisAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* TinisAuthView.swift */; };
 		B10000000000000000000003 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000022 /* Supabase */; };
+		C10000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000002 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		B10000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000014 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Shared.xcconfig; sourceTree = "<group>"; };
 		B10000000000000000000015 /* Secrets.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Secrets.xcconfig.example; sourceTree = "<group>"; };
+		C10000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -46,6 +48,7 @@
 		A10000000000000000000004 /* Tinis */ = {
 			isa = PBXGroup;
 			children = (
+				C10000000000000000000002 /* Assets.xcassets */,
 				A10000000000000000000001 /* TinisApp.swift */,
 				B10000000000000000000011 /* TinisBackend.swift */,
 				B10000000000000000000012 /* TinisAuthView.swift */,
@@ -127,6 +130,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C10000000000000000000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -240,6 +244,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B10000000000000000000014 /* Shared.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -268,6 +273,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B10000000000000000000014 /* Shared.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;

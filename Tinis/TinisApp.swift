@@ -1227,6 +1227,10 @@ struct BasicsStep: View {
 struct MartiniPhotoPicker: View {
     @Binding var photoData: Data?
     @State private var selectedItem: PhotosPickerItem?
+    @State private var isShowingPhotoSource = false
+    @State private var isShowingPhotoLibrary = false
+    @State private var isShowingCamera = false
+    @State private var isShowingCameraUnavailable = false
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -1256,7 +1260,9 @@ struct MartiniPhotoPicker: View {
             )
 
             HStack(spacing: 10) {
-                PhotosPicker(selection: $selectedItem, matching: .images) {
+                Button {
+                    isShowingPhotoSource = true
+                } label: {
                     Label(image == nil ? "Add a martini photo" : "Change photo", systemImage: "camera.fill")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(TinisColor.cream)
@@ -1265,6 +1271,7 @@ struct MartiniPhotoPicker: View {
                         .background(TinisColor.forest.opacity(0.94), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityHint("Choose whether to take a new photo or select one from your library")
 
                 if image != nil {
                     Button {
@@ -1310,6 +1317,42 @@ struct MartiniPhotoPicker: View {
                     .padding(10)
             }
         }
+        .confirmationDialog(
+            image == nil ? "Add a martini photo" : "Change photo",
+            isPresented: $isShowingPhotoSource,
+            titleVisibility: .visible
+        ) {
+            Button("Take Photo") {
+                #if targetEnvironment(simulator)
+                isShowingCameraUnavailable = true
+                #else
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    isShowingCamera = true
+                } else {
+                    isShowingCameraUnavailable = true
+                }
+                #endif
+            }
+            Button("Choose from Library") {
+                isShowingPhotoLibrary = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .photosPicker(isPresented: $isShowingPhotoLibrary, selection: $selectedItem, matching: .images)
+        .fullScreenCover(isPresented: $isShowingCamera) {
+            MartiniCameraPicker(isPresented: $isShowingCamera) { capturedImage in
+                preparePhoto(capturedImage)
+            }
+            .ignoresSafeArea()
+        }
+        .alert("Camera isn’t available here", isPresented: $isShowingCameraUnavailable) {
+            Button("Choose from Library") {
+                isShowingPhotoLibrary = true
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The iOS Simulator doesn’t have a camera. Try this on your iPhone, or choose an existing photo to keep testing here.")
+        }
         .onChange(of: selectedItem) { _, newItem in
             guard let newItem else { return }
             isLoading = true
@@ -1330,6 +1373,59 @@ struct MartiniPhotoPicker: View {
                 }
                 isLoading = false
             }
+        }
+    }
+
+    private func preparePhoto(_ originalImage: UIImage) {
+        isLoading = true
+        errorMessage = nil
+        if let preparedData = originalImage.tinisUploadData() {
+            photoData = preparedData
+        } else {
+            errorMessage = "That photo could not be prepared."
+        }
+        isLoading = false
+    }
+}
+
+private struct MartiniCameraPicker: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onImageCaptured: (UIImage) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        private var parent: MartiniCameraPicker
+
+        init(parent: MartiniCameraPicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.onImageCaptured(image)
+            }
+            parent.isPresented = false
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.isPresented = false
         }
     }
 }

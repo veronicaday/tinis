@@ -42,6 +42,43 @@ struct MartiniVenue: Identifiable, Hashable {
     var elo: Int
 }
 
+enum DuelChoice: String {
+    case new
+    case old
+    case tie
+    case skip
+}
+
+enum TinisElo {
+    static let startingRating = 1500
+    private static let kFactor = 32.0
+
+    static func updatedRatings(
+        newRating: Int = startingRating,
+        pastRating: Int,
+        choice: DuelChoice?
+    ) -> (new: Int, past: Int) {
+        guard let choice, choice != .skip else { return (newRating, pastRating) }
+
+        let actual: Double
+        switch choice {
+        case .new: actual = 1
+        case .old: actual = 0
+        case .tie: actual = 0.5
+        case .skip: return (newRating, pastRating)
+        }
+
+        let expected = 1 / (1 + pow(10, Double(pastRating - newRating) / 400))
+        let adjustment = Int((kFactor * (actual - expected)).rounded())
+        return (newRating + adjustment, pastRating - adjustment)
+    }
+
+    static func displayScore(for rating: Int) -> Double {
+        let score = 7.85 + Double(rating - startingRating) / 120
+        return (min(10, max(1, score)) * 10).rounded() / 10
+    }
+}
+
 struct FriendActivity: Identifiable {
     let id = UUID()
     let friend: String
@@ -149,7 +186,13 @@ final class TinisStore: ObservableObject {
 #endif
     }
 
-    var topVenue: MartiniVenue { venues.sorted { $0.score > $1.score }.first! }
+    var topVenue: MartiniVenue { venues.sorted { $0.elo > $1.elo }.first! }
+
+    func updateElo(for venue: MartiniVenue, to elo: Int) {
+        guard let index = venues.firstIndex(where: { $0.id == venue.id }) else { return }
+        venues[index].elo = elo
+        venues[index].score = TinisElo.displayScore(for: elo)
+    }
 
     func add(_ venue: MartiniVenue) {
         if let index = venues.firstIndex(where: {
@@ -1057,13 +1100,13 @@ struct AddMartiniView: View {
     @State private var stage = 0
     @State private var venueName = ""
     @State private var location = "New York, NY"
-    @State private var score = 8.4
     @State private var price = "19"
     @State private var spirit = "Gin"
     @State private var garnish = "Olive"
     @State private var servingStyle = "Up"
     @State private var photoData: Data?
     @State private var traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
+    @State private var duelChoice: DuelChoice?
     @State private var isSaving = false
     @State private var saveNotice: String?
     @State private var didSaveDespiteNotice = false
@@ -1082,7 +1125,6 @@ struct AddMartiniView: View {
                             BasicsStep(
                                 venueName: $venueName,
                                 location: $location,
-                                score: $score,
                                 price: $price,
                                 spirit: $spirit,
                                 garnish: $garnish,
@@ -1092,15 +1134,20 @@ struct AddMartiniView: View {
                             )
                         }
                         if stage == 1 { TraitsStep(traits: $traits, spirit: spirit, garnish: garnish, servingStyle: servingStyle) }
-                        if stage == 2 { DuelStep(newScore: score, comparison: app.topVenue) }
+                        if stage == 2 { DuelStep(comparison: app.topVenue, choice: $duelChoice) }
                         Button {
                             if stage < 2 { stage += 1 } else {
                                 guard !isSaving else { return }
                                 isSaving = true
+                                let comparison = app.topVenue
+                                let updatedElo = TinisElo.updatedRatings(
+                                    pastRating: comparison.elo,
+                                    choice: duelChoice
+                                )
                                 let newVenue = MartiniVenue(
                                     name: venueName.isEmpty ? "A very good martini" : venueName,
                                     location: location,
-                                    score: score,
+                                    score: TinisElo.displayScore(for: updatedElo.new),
                                     ratingCount: 1,
                                     date: "Today",
                                     trait: traitDescription,
@@ -1108,7 +1155,7 @@ struct AddMartiniView: View {
                                     chilliness: traits["Chilliness"] ?? 2,
                                     uniqueness: traits["Uniqueness"] ?? 2,
                                     spiritForward: traits["Spirit-forward"] ?? 2,
-                                    elo: 1516
+                                    elo: updatedElo.new
                                 )
                                 Task {
                                     do {
@@ -1122,6 +1169,7 @@ struct AddMartiniView: View {
                                                 photoData: photoData
                                             )
                                             if let photoWarning {
+                                                app.updateElo(for: comparison, to: updatedElo.past)
                                                 app.add(newVenue)
                                                 resetForm()
                                                 didSaveDespiteNotice = true
@@ -1129,6 +1177,7 @@ struct AddMartiniView: View {
                                                 return
                                             }
                                         }
+                                        app.updateElo(for: comparison, to: updatedElo.past)
                                         app.add(newVenue)
                                         resetForm()
                                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -1159,6 +1208,7 @@ struct AddMartiniView: View {
                         .disabled(isSaving)
                     }
                     .padding(20)
+                    .padding(.bottom, 48)
                 }
             }
             .navigationTitle(stage == 0 ? "Add a Martini" : stage == 1 ? "Traits & Details" : "One quick question")
@@ -1224,13 +1274,13 @@ struct AddMartiniView: View {
         stage = 0
         venueName = ""
         location = "New York, NY"
-        score = 8.4
         price = "19"
         spirit = "Gin"
         garnish = "Olive"
         servingStyle = "Up"
         photoData = nil
         traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
+        duelChoice = nil
         isSaving = false
     }
 
@@ -1257,7 +1307,6 @@ struct ProgressLine: View {
 struct BasicsStep: View {
     @Binding var venueName: String
     @Binding var location: String
-    @Binding var score: Double
     @Binding var price: String
     @Binding var spirit: String
     @Binding var garnish: String
@@ -1291,22 +1340,6 @@ struct BasicsStep: View {
                 HStack {
                     Image(systemName: "building.2").foregroundStyle(TinisColor.moss)
                     TextField("City", text: $location).textInputAutocapitalization(.words)
-                }
-            }
-            InfoCard(title: "YOUR OVERALL SCORE") {
-                HStack {
-                    Text("Terrible").font(.system(size: 10, design: .rounded))
-                    Slider(value: $score, in: 1...10, step: 0.1).tint(TinisColor.forest)
-                    Text("Perfect").font(.system(size: 10, design: .rounded))
-                }
-                HStack {
-                    Spacer()
-                    Text(score, format: .number.precision(.fractionLength(1)))
-                        .font(.system(size: 45, weight: .light, design: .serif).monospacedDigit())
-                        .frame(width: 94, height: 94)
-                        .background(TinisColor.cream, in: Circle())
-                        .overlay(Circle().stroke(TinisColor.gold.opacity(0.56)))
-                    Spacer()
                 }
             }
             VStack(alignment: .leading, spacing: 15) {
@@ -1717,9 +1750,8 @@ struct TraitGlyph: View {
 }
 
 struct DuelStep: View {
-    let newScore: Double
     let comparison: MartiniVenue
-    @State private var choice: String?
+    @Binding var choice: DuelChoice?
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text("Which would you rather order again?")
@@ -1728,20 +1760,24 @@ struct DuelStep: View {
             Text("This keeps your personal rankings interesting without making every rating a chore.")
                 .foregroundStyle(TinisColor.ink.opacity(0.62))
             HStack(spacing: 14) {
-                DuelCard(title: "The new martini", subtitle: "Your score \(String(format: "%.1f", newScore))", selected: choice == "new") { choice = "new" }
-                DuelCard(title: comparison.name, subtitle: "Your score \(String(format: "%.1f", comparison.score))", selected: choice == "old") { choice = "old" }
+                DuelCard(title: "The new martini", subtitle: "Unranked", selected: choice == .new) { choice = .new }
+                DuelCard(title: comparison.name, subtitle: "Your current #1", selected: choice == .old) { choice = .old }
             }
             HStack {
-                Button("Too close") { choice = "tie" }
+                Button("Too close") { choice = .tie }
                     .buttonStyle(.bordered)
                     .tint(TinisColor.gold)
                     .foregroundStyle(TinisColor.ink)
                 Spacer()
-                Button("Skip for now") { choice = "skip" }
+                Button("Skip for now") { choice = .skip }
                     .buttonStyle(.borderless)
                     .foregroundStyle(TinisColor.ink.opacity(0.62))
             }
-            if let choice { Text(choice == "new" ? "A perfect debut." : choice == "old" ? "Classic still wins." : choice == "tie" ? "A tie is fair." : "No ranking update.").font(.subheadline).foregroundStyle(TinisColor.forest) }
+            if let choice {
+                Text(choice == .new ? "A perfect debut." : choice == .old ? "Classic still wins." : choice == .tie ? "A tie is fair." : "No ranking update.")
+                    .font(.subheadline)
+                    .foregroundStyle(TinisColor.forest)
+            }
         }
     }
 }

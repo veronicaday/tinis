@@ -127,6 +127,13 @@ struct FriendActivity: Identifiable {
     var isOwnRating: Bool = false
     var cheersCount: Int = 0
     var isCheered: Bool = false
+
+    var notificationID: String {
+        ratingID?.uuidString.lowercased()
+            ?? [friend, venueName, time, String(format: "%.1f", score)]
+                .joined(separator: "|")
+                .lowercased()
+    }
 }
 
 enum ProfileTopFilter: String, CaseIterable, Identifiable {
@@ -668,13 +675,25 @@ struct TinisTabBar: View {
 
 // MARK: - Home
 
+private enum HomeSheetDestination: Identifiable {
+    case activity
+    case venue(MartiniVenue)
+
+    var id: String {
+        switch self {
+        case .activity: return "club-activity"
+        case .venue(let venue): return "venue-\(venue.id.uuidString)"
+        }
+    }
+}
+
 struct HomeView: View {
-    @EnvironmentObject private var app: TinisStore
     @EnvironmentObject private var backend: TinisBackend
+    @AppStorage("tinis.seenClubActivityIDs") private var seenActivityIDsStorage = ""
     @State private var demoCheeredIDs: Set<UUID> = []
     @State private var selectedFriend: String?
-    @State private var isShowingClubActivity = false
-    @State private var hasSeenClubActivity = false
+    @State private var sheetDestination: HomeSheetDestination?
+    @State private var pendingVenueAfterDismiss: MartiniVenue?
 
     private let demoActivity = [
         FriendActivity(friend: "Sarah", initials: "S", venueName: "Bemelmans Bar", location: "New York, NY", score: 9.2, trait: "Very cold · lightly dirty", note: "Perfectly cold and exactly dirty enough.", time: "12 min ago", rankingUpdate: "New #1", avatarHex: 0xC85B68, artworkVariant: 0, photoURL: nil),
@@ -742,6 +761,18 @@ struct HomeView: View {
         Array(Set(allActivity.map(\.friend))).sorted()
     }
 
+    private var seenActivityIDs: Set<String> {
+        Set(seenActivityIDsStorage.split(separator: ",").map(String.init))
+    }
+
+    private var unreadActivityIDs: Set<String> {
+        Set(allActivity.map(\.notificationID)).subtracting(seenActivityIDs)
+    }
+
+    private var unreadActivityCount: Int {
+        unreadActivityIDs.count
+    }
+
     private func detailVenue(for activity: FriendActivity) -> MartiniVenue {
         MartiniVenue(
             name: activity.venueName,
@@ -791,24 +822,29 @@ struct HomeView: View {
                             VStack(alignment: .trailing, spacing: 10) {
                                 AvatarStack()
                                 Button {
-                                    hasSeenClubActivity = true
-                                    isShowingClubActivity = true
+                                    sheetDestination = .activity
                                 } label: {
                                     Image(systemName: "bell")
                                         .font(.system(size: 15, weight: .medium))
                                         .foregroundStyle(TinisColor.gold)
-                                        .frame(width: 30, height: 30)
+                                        .frame(width: 36, height: 36)
                                         .contentShape(Circle())
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("Club activity")
+                                .accessibilityLabel(
+                                    unreadActivityCount > 0
+                                        ? "Club activity, \(unreadActivityCount) unread"
+                                        : "Club activity"
+                                )
                                 .overlay(alignment: .topTrailing) {
-                                    if !hasSeenClubActivity && !allActivity.isEmpty {
-                                        Circle()
-                                            .fill(TinisColor.blush)
-                                            .frame(width: 7, height: 7)
-                                            .overlay(Circle().stroke(TinisColor.deepForest, lineWidth: 1.5))
-                                            .offset(x: -2, y: 2)
+                                    if unreadActivityCount > 0 {
+                                        Text(unreadActivityCount > 9 ? "9+" : "\(unreadActivityCount)")
+                                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                                            .foregroundStyle(TinisColor.deepForest)
+                                            .frame(minWidth: 15, minHeight: 15)
+                                            .background(TinisColor.blush, in: Capsule())
+                                            .overlay(Capsule().stroke(TinisColor.deepForest, lineWidth: 1.5))
+                                            .offset(x: 2, y: -1)
                                     }
                                 }
                             }
@@ -864,7 +900,7 @@ struct HomeView: View {
                             ForEach(activity) { item in
                                 FriendActivityCard(
                                     activity: item,
-                                    action: { app.selectedVenue = detailVenue(for: item) },
+                                    action: { sheetDestination = .venue(detailVenue(for: item)) },
                                     cheersAction: {
                                         if let ratingID = item.ratingID {
                                             Task { await backend.toggleCheers(for: ratingID) }
@@ -883,21 +919,39 @@ struct HomeView: View {
                     .padding(.bottom, 22)
                 }
             }
-            .sheet(item: $app.selectedVenue) {
-                VenueDetailView(venue: $0)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
-            .sheet(isPresented: $isShowingClubActivity) {
-                ClubActivitySheet(activity: allActivity) { item in
-                    isShowingClubActivity = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        app.selectedVenue = detailVenue(for: item)
+            .sheet(item: $sheetDestination, onDismiss: presentPendingVenue) { destination in
+                switch destination {
+                case .activity:
+                    ClubActivitySheet(
+                        activity: allActivity,
+                        unreadNotificationIDs: unreadActivityIDs
+                    ) { item in
+                        markActivitySeen(item)
+                        pendingVenueAfterDismiss = detailVenue(for: item)
+                        sheetDestination = nil
                     }
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                case .venue(let venue):
+                    VenueDetailView(venue: venue)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
                 }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
             }
+        }
+    }
+
+    private func markActivitySeen(_ item: FriendActivity) {
+        var updatedIDs = seenActivityIDs
+        updatedIDs.insert(item.notificationID)
+        seenActivityIDsStorage = updatedIDs.sorted().joined(separator: ",")
+    }
+
+    private func presentPendingVenue() {
+        guard let venue = pendingVenueAfterDismiss else { return }
+        pendingVenueAfterDismiss = nil
+        DispatchQueue.main.async {
+            sheetDestination = .venue(venue)
         }
     }
 }
@@ -905,6 +959,7 @@ struct HomeView: View {
 struct ClubActivitySheet: View {
     @Environment(\.dismiss) private var dismiss
     let activity: [FriendActivity]
+    let unreadNotificationIDs: Set<String>
     let openActivity: (FriendActivity) -> Void
 
     var body: some View {
@@ -938,10 +993,18 @@ struct ClubActivitySheet: View {
                                         borderColor: TinisColor.gold.opacity(0.38)
                                     )
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("\(item.friend) rated \(item.venueName)")
-                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(TinisColor.ink)
-                                            .lineLimit(2)
+                                        HStack(spacing: 6) {
+                                            if unreadNotificationIDs.contains(item.notificationID) {
+                                                Circle()
+                                                    .fill(TinisColor.blush)
+                                                    .frame(width: 7, height: 7)
+                                                    .accessibilityHidden(true)
+                                            }
+                                            Text("\(item.friend) rated \(item.venueName)")
+                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(TinisColor.ink)
+                                                .lineLimit(2)
+                                        }
                                         Text("\(item.rankingUpdate) · \(item.time)")
                                             .font(.system(size: 10, design: .rounded))
                                             .foregroundStyle(TinisColor.ink.opacity(0.5))

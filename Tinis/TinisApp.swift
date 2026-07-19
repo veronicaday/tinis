@@ -4754,6 +4754,7 @@ struct ProfileSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isConfirmingSignOut = false
+    @State private var isShowingAppleConnection = false
 
     private var memberCount: Int {
         backend.clubFriends.count + 1
@@ -4791,6 +4792,31 @@ struct ProfileSettingsView: View {
                                 SettingsActionLabel(icon: "square.and.arrow.up", title: "Share club invite")
                             }
                             .buttonStyle(.plain)
+                        }
+
+                        if backend.canConnectApple {
+                            SettingsPanel(title: "ACCOUNT") {
+                                if backend.isAppleConnected {
+                                    SettingsValueRow(
+                                        icon: "apple.logo",
+                                        title: "Sign in with Apple",
+                                        detail: "Connected"
+                                    )
+                                } else {
+                                    Button {
+                                        isShowingAppleConnection = true
+                                    } label: {
+                                        SettingsActionLabel(
+                                            icon: "apple.logo",
+                                            title: "Connect Sign in with Apple"
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    Text("Keep your existing rankings and club membership when you switch devices.")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundStyle(TinisColor.ink.opacity(0.58))
+                                }
+                            }
                         }
 
                         SettingsPanel(title: "ABOUT") {
@@ -4835,6 +4861,28 @@ struct ProfileSettingsView: View {
                 }
             } message: {
                 Text("Your ratings stay safe. Sign in with the same Apple Account to return to the club.")
+            }
+            .sheet(isPresented: $isShowingAppleConnection) {
+                ZStack {
+                    LinearGradient(
+                        colors: [TinisColor.darkestForest, TinisColor.deepForest, TinisColor.forest],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .ignoresSafeArea()
+                    TinisAppleSignInView(
+                        linkExistingAccount: true,
+                        onSuccess: { isShowingAppleConnection = false }
+                    )
+                    Button("Cancel") {
+                        isShowingAppleConnection = false
+                    }
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(TinisColor.gold)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(24)
+                }
+                .preferredColorScheme(.dark)
             }
         }
     }

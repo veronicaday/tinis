@@ -5,6 +5,7 @@ import SwiftUI
 
 struct TinisAuthGateView: View {
     @EnvironmentObject private var backend: TinisBackend
+    @State private var isUsingEmail = false
 
     var body: some View {
         ZStack {
@@ -19,8 +20,27 @@ struct TinisAuthGateView: View {
             case .checking:
                 ProgressView()
                     .tint(TinisColor.gold)
-            case .signedOut, .needsAppleLink:
-                TinisEmailSignInView()
+            case .signedOut:
+                if isUsingEmail {
+                    TinisEmailSignInView {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isUsingEmail = false
+                        }
+                    }
+                    .transition(.opacity)
+                } else {
+                    TinisAppleSignInView(
+                        linkExistingAccount: false,
+                        onUseEmail: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isUsingEmail = true
+                            }
+                        }
+                    )
+                    .transition(.opacity)
+                }
+            case .needsAppleLink:
+                TinisAppleSignInView(linkExistingAccount: true)
             case let .emailSent(email):
                 TinisCheckEmailView(email: email)
             case .needsInvite:
@@ -35,6 +55,7 @@ struct TinisAuthGateView: View {
 
 private struct TinisEmailSignInView: View {
     @EnvironmentObject private var backend: TinisBackend
+    let onUseApple: () -> Void
     @State private var email = ""
     @State private var isSending = false
     @FocusState private var emailFocused: Bool
@@ -106,6 +127,13 @@ private struct TinisEmailSignInView: View {
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(TinisColor.cream.opacity(0.56))
                 .padding(.top, 16)
+            Button("Use Apple instead") {
+                emailFocused = false
+                onUseApple()
+            }
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(TinisColor.gold)
+            .padding(.top, 12)
             Spacer()
         }
         .padding(.horizontal, 24)
@@ -143,9 +171,11 @@ private struct TinisCheckEmailView: View {
     }
 }
 
-private struct TinisAppleSignInView: View {
+struct TinisAppleSignInView: View {
     @EnvironmentObject private var backend: TinisBackend
     let linkExistingAccount: Bool
+    var onUseEmail: (() -> Void)? = nil
+    var onSuccess: (() -> Void)? = nil
     @State private var currentNonce: String?
     @State private var isSigningIn = false
 
@@ -206,6 +236,14 @@ private struct TinisAppleSignInView: View {
                 .foregroundStyle(TinisColor.cream.opacity(0.56))
                 .padding(.top, 16)
                 .padding(.horizontal, 18)
+            if let onUseEmail {
+                Button("Use email instead") {
+                    onUseEmail()
+                }
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(TinisColor.gold)
+                .padding(.top, 12)
+            }
             Spacer()
         }
         .padding(.horizontal, 24)
@@ -241,6 +279,9 @@ private struct TinisAppleSignInView: View {
                     displayName: displayName,
                     linkExistingAccount: linkExistingAccount
                 )
+                if backend.phase == .ready {
+                    onSuccess?()
+                }
                 isSigningIn = false
                 currentNonce = nil
             }

@@ -276,6 +276,7 @@ final class TinisBackend: ObservableObject {
     @Published private(set) var clubFriends: [TinisClubFriend] = []
     @Published private(set) var currentUserID: UUID?
     @Published private(set) var currentDisplayName: String?
+    @Published private(set) var isAppleConnected = false
     @Published private(set) var avatarURLs: [UUID: URL] = [:]
     @Published private(set) var cheersByRating: [UUID: TinisCheersState] = [:]
     @Published private(set) var photoURLs: [UUID: URL] = [:]
@@ -287,6 +288,7 @@ final class TinisBackend: ObservableObject {
 
     var isConfigured: Bool { client != nil }
     var isReady: Bool { phase == .ready && clubID != nil }
+    var canConnectApple: Bool { client != nil && currentUserID != nil }
     var currentProfilePhotoURL: URL? {
         guard let currentUserID else { return nil }
         return avatarURLs[currentUserID]
@@ -336,7 +338,8 @@ final class TinisBackend: ObservableObject {
         }
 
         do {
-            _ = try await client.auth.session
+            let session = try await client.auth.session
+            isAppleConnected = Self.hasAppleIdentity(session.user)
             await loadMembership()
         } catch {
             phase = .signedOut
@@ -370,7 +373,8 @@ final class TinisBackend: ObservableObject {
         guard let client, url.scheme?.caseInsensitiveCompare("tinis") == .orderedSame else { return }
         errorMessage = nil
         do {
-            _ = try await client.auth.session(from: url)
+            let session = try await client.auth.session(from: url)
+            isAppleConnected = Self.hasAppleIdentity(session.user)
             await loadMembership()
         } catch {
             errorMessage = "That sign-in link could not be completed. Please request a new one."
@@ -404,6 +408,7 @@ final class TinisBackend: ObservableObject {
             } else {
                 session = try await client.auth.signInWithIdToken(credentials: credentials)
             }
+            isAppleConnected = true
 
             let trimmedName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let trimmedName, !trimmedName.isEmpty {
@@ -435,6 +440,12 @@ final class TinisBackend: ObservableObject {
         guard let at = value.firstIndex(of: "@"), at != value.startIndex else { return false }
         let domain = value[value.index(after: at)...]
         return domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
+    }
+
+    private static func hasAppleIdentity(_ user: User) -> Bool {
+        user.identities?.contains {
+            $0.provider.caseInsensitiveCompare("apple") == .orderedSame
+        } ?? false
     }
 
     func updateDisplayName(_ name: String) async -> Bool {
@@ -526,6 +537,7 @@ final class TinisBackend: ObservableObject {
         clubFriends = []
         currentUserID = nil
         currentDisplayName = nil
+        isAppleConnected = false
         currentAvatarPath = nil
         avatarURLs = [:]
         cheersByRating = [:]

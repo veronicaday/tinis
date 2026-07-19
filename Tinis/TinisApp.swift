@@ -17,7 +17,7 @@ struct TinisApp: App {
             TinisRootView()
                 .environmentObject(app)
                 .environmentObject(backend)
-                .tint(TinisColor.gold)
+                .tint(TinisColor.forest)
                 .task { await backend.start() }
                 .onOpenURL { url in
                     Task { await backend.handleOpenURL(url) }
@@ -175,14 +175,43 @@ struct MartiniTypeScopePicker: View {
     var dark = true
 
     var body: some View {
-        Picker("Martini type", selection: $selection) {
+        HStack(spacing: 3) {
             ForEach(MartiniTypeScope.allCases) { scope in
-                Text(scope.rawValue).tag(scope)
+                let isSelected = selection == scope
+                let accent = scope == .all ? TinisColor.gold : scope.accentColor
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selection = scope
+                    }
+                } label: {
+                    Text(scope.rawValue)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium, design: .rounded))
+                        .foregroundStyle(
+                            isSelected
+                                ? (dark ? TinisColor.ink : (scope == .all ? TinisColor.ink : accent))
+                                : (dark ? TinisColor.cream.opacity(0.72) : TinisColor.ink.opacity(0.62))
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(
+                            isSelected
+                                ? (dark ? TinisColor.cream : accent.opacity(scope == .all ? 0.3 : 0.14))
+                                : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 9)
+                        )
+                }
+                .buttonStyle(.plain)
             }
         }
-        .pickerStyle(.segmented)
-        .tint(selection.accentColor)
-        .colorScheme(dark ? .dark : .light)
+        .padding(3)
+        .background(
+            dark ? TinisColor.cream.opacity(0.09) : TinisColor.line.opacity(0.22),
+            in: RoundedRectangle(cornerRadius: 11)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11)
+                .stroke(dark ? TinisColor.cream.opacity(0.1) : TinisColor.line.opacity(0.6), lineWidth: 0.75)
+        )
         .accessibilityLabel("Martini type filter")
     }
 }
@@ -555,14 +584,14 @@ enum TinisColor {
     static let cocoa = Color(hex: 0x8A6654)
     static let espressoPaper = Color(hex: 0xE9DCC8)
     static let cream = Color(hex: 0xF6EFDF)
-    static let paper = Color(hex: 0xEDE2CD)
+    static let paper = Color(hex: 0xE7D9BE)
     static let softWhite = Color(hex: 0xFAF4E8)
     static let ink = Color(hex: 0x17231E)
     static let gold = Color(hex: 0xC9AE72)
     static let paleGold = Color(hex: 0xE4D1A3)
     static let blush = Color(hex: 0xDDAEA7)
     static let moss = Color(hex: 0x718155)
-    static let line = Color(hex: 0xD4C2A2)
+    static let line = Color(hex: 0xC9B38C)
 }
 
 extension Color {
@@ -838,11 +867,11 @@ struct TinisTabBar: View {
     let martiniTypeScope: MartiniTypeScope
     private var isAllMode: Bool { martiniTypeScope == .all }
     private let items = [
-        ("Home", "house.fill"),
+        ("Home", "house"),
         ("Search", "magnifyingglass"),
         ("Add", "plus"),
-        ("Rankings", "chart.bar.fill"),
-        ("Profile", "person.fill")
+        ("Rankings", "chart.bar.xaxis"),
+        ("Profile", "person")
     ]
 
     var body: some View {
@@ -856,7 +885,8 @@ struct TinisTabBar: View {
                             ZStack {
                                 Circle().fill(isAllMode ? TinisColor.forest : TinisColor.cream)
                                 Image(systemName: items[index].1)
-                                    .font(.system(size: 18, weight: .medium))
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .symbolRenderingMode(.monochrome)
                                     .foregroundStyle(isAllMode ? TinisColor.cream : TinisColor.ink)
                             }
                             .frame(width: 46, height: 46)
@@ -864,7 +894,8 @@ struct TinisTabBar: View {
                             .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
                         } else {
                             Image(systemName: items[index].1)
-                                .font(.system(size: 19, weight: selection == index ? .semibold : .regular))
+                                .font(.system(size: 18, weight: .medium))
+                                .symbolRenderingMode(.monochrome)
                                 .frame(height: 24)
                                 .foregroundStyle(
                                     isAllMode
@@ -877,7 +908,7 @@ struct TinisTabBar: View {
                             .foregroundStyle(
                                 isAllMode
                                     ? (selection == index ? TinisColor.forest : TinisColor.ink.opacity(0.48))
-                                    : (selection == index ? TinisColor.gold : TinisColor.cream.opacity(0.56))
+                                    : (selection == index ? TinisColor.cream : TinisColor.cream.opacity(0.56))
                             )
                             .offset(y: index == 2 ? -7 : 0)
                     }
@@ -1538,7 +1569,7 @@ struct VenueRow: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 10)
-        .background(TinisColor.cream)
+        .background(TinisColor.softWhite)
         .contentShape(Rectangle())
     }
 }
@@ -1585,6 +1616,54 @@ private enum SearchDisplayMode: String, CaseIterable, Identifiable {
         case .list: return "list.bullet"
         case .map: return "map"
         }
+    }
+}
+
+private struct SearchDisplayModePicker: View {
+    @Binding var selection: SearchDisplayMode
+    let scope: MartiniTypeScope
+
+    private var dark: Bool { !scope.isMixedMode }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(SearchDisplayMode.allCases) { mode in
+                let isSelected = selection == mode
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selection = mode
+                    }
+                } label: {
+                    Label(mode.rawValue, systemImage: mode.systemImage)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium, design: .rounded))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(
+                            isSelected
+                                ? (dark ? TinisColor.ink : scope.accentColor)
+                                : (dark ? TinisColor.cream.opacity(0.7) : TinisColor.ink.opacity(0.58))
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(
+                            isSelected
+                                ? (dark ? TinisColor.cream : scope.accentColor.opacity(0.14))
+                                : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 9)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(
+            dark ? TinisColor.cream.opacity(0.09) : TinisColor.line.opacity(0.22),
+            in: RoundedRectangle(cornerRadius: 11)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11)
+                .stroke(dark ? TinisColor.cream.opacity(0.1) : TinisColor.line.opacity(0.6), lineWidth: 0.75)
+        )
+        .accessibilityLabel("Ratings view")
     }
 }
 
@@ -1815,6 +1894,8 @@ struct SearchView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
+                            .font(.system(size: 15, weight: .medium))
+                            .symbolRenderingMode(.monochrome)
                             .foregroundStyle(app.martiniTypeScope.secondaryColor)
                         Text("Search bars or restaurants")
                             .foregroundStyle(TinisColor.ink.opacity(0.55))
@@ -1826,7 +1907,9 @@ struct SearchView: View {
                 }
                 .padding(.horizontal, 15)
                 .frame(height: 48)
-                .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 12))
+                .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(TinisColor.line.opacity(0.66), lineWidth: 0.75))
+                .shadow(color: TinisColor.ink.opacity(0.06), radius: 10, y: 4)
                 .buttonStyle(.plain)
 
                 HStack {
@@ -1837,19 +1920,12 @@ struct SearchView: View {
                     Spacer()
                     Text("\(visibleVenues.count) spots")
                         .font(.system(size: 10, design: .rounded))
-                        .foregroundStyle(TinisColor.gold)
+                        .foregroundStyle(app.martiniTypeScope.secondaryText)
                 }
 
                 MartiniTypeScopePicker(selection: $app.martiniTypeScope, dark: !isAllMode)
 
-                Picker("View", selection: $displayMode) {
-                    ForEach(SearchDisplayMode.allCases) { mode in
-                        Label(mode.rawValue, systemImage: mode.systemImage).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .colorScheme(isAllMode ? .light : .dark)
-                .accessibilityLabel("Ratings view")
+                SearchDisplayModePicker(selection: $displayMode, scope: app.martiniTypeScope)
 
                 if displayMode == .list {
                     ScrollView {
@@ -2041,7 +2117,7 @@ struct RestaurantRatingsView: View {
                     Button(action: rateHere) {
                         HStack {
                             Image(systemName: "plus")
-                            Text(matchedVenue == nil ? "Be the first to rate here" : "Rate a martini here")
+                            Text(matchedVenue == nil ? "Add the first martini" : "Rate a martini here")
                             Spacer()
                             Image(systemName: "arrow.right")
                         }
@@ -2695,9 +2771,9 @@ struct InfoCard<Content: View>: View {
         }
         .foregroundStyle(TinisColor.ink)
         .padding(16)
-        .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
-        .shadow(color: TinisColor.ink.opacity(0.035), radius: 10, y: 4)
+        .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 13))
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.72)))
+        .shadow(color: TinisColor.ink.opacity(0.075), radius: 12, y: 5)
     }
 }
 
@@ -2880,8 +2956,8 @@ struct AddMartiniView: View {
             ZStack {
                 LinearGradient(
                     colors: selectedMartiniType == .espresso
-                        ? [TinisColor.espressoPaper, TinisColor.cream]
-                        : [TinisColor.cream, TinisColor.paper.opacity(0.72)],
+                        ? [TinisColor.espressoPaper, TinisColor.paper]
+                        : [TinisColor.paper, TinisColor.paleGold.opacity(0.34)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -3016,7 +3092,7 @@ struct AddMartiniView: View {
                             } label: {
                             HStack(spacing: 9) {
                                 if isSaving { ProgressView().tint(.white) }
-                                Text(isSaving ? (photoData == nil ? "Saving martini…" : "Uploading photo…") : stage == 2 ? "Save martini" : stage == 1 ? "Next: quick ranking" : "Next: traits & details")
+                                Text(isSaving ? (photoData == nil ? "Saving martini…" : "Uploading photo…") : stage == 2 ? "Save martini" : stage == 1 ? (rankingComparison == nil ? "Next: ready to save" : "Next: quick ranking") : "Next: traits & details")
                             }
                                 .frame(maxWidth: .infinity)
                                 .font(.headline)
@@ -3184,7 +3260,7 @@ struct AddMartiniView: View {
         guard let selectedMartiniType else { return "Choose your martini" }
         if stage == 0 { return "Add an \(selectedMartiniType.shortTitle)" }
         if stage == 1 { return "\(selectedMartiniType.shortTitle) Traits" }
-        return "One quick question"
+        return rankingComparison == nil ? "Ready to save" : "One quick question"
     }
 
     private func chooseMartiniType(_ type: MartiniType) {
@@ -3448,7 +3524,11 @@ struct BasicsStep: View {
             InfoCard(title: "WHERE WERE YOU?") {
                 Button(action: searchVenue) {
                     HStack(spacing: 10) {
-                        Image(systemName: "mappin.and.ellipse").foregroundStyle(TinisColor.moss)
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.system(size: 16, weight: .medium))
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(martiniType.accentColor)
+                            .frame(width: 22)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(venueName.isEmpty ? "Search a bar or restaurant" : venueName)
                                 .foregroundStyle(venueName.isEmpty ? TinisColor.ink.opacity(0.48) : TinisColor.ink)
@@ -3467,7 +3547,11 @@ struct BasicsStep: View {
                 .buttonStyle(.plain)
                 Divider()
                 HStack {
-                    Image(systemName: "building.2").foregroundStyle(TinisColor.moss)
+                    Image(systemName: "building.2")
+                        .font(.system(size: 16, weight: .medium))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(martiniType.accentColor)
+                        .frame(width: 22)
                     TextField("City", text: $location)
                         .textInputAutocapitalization(.words)
                         .foregroundStyle(TinisColor.ink)
@@ -3504,8 +3588,9 @@ struct BasicsStep: View {
             }
             .foregroundStyle(TinisColor.ink)
             .padding(15)
-            .background(TinisColor.softWhite.opacity(0.78), in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
+            .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.72)))
+            .shadow(color: TinisColor.ink.opacity(0.075), radius: 12, y: 5)
             InfoCard(title: "TASTING NOTES · OPTIONAL") {
                 TextField("What stood out about this martini?", text: $note, axis: .vertical)
                     .font(.system(size: 14, design: .rounded))
@@ -4143,7 +4228,9 @@ struct RankingsView: View {
                         Text("Rankings")
                             .font(.system(size: 31, design: .serif))
                             .foregroundStyle(app.martiniTypeScope.primaryText)
-                        Text("The fun stuff.").font(.system(size: 19, design: .serif)).foregroundStyle(app.martiniTypeScope.secondaryText)
+                        Text("The fun stuff.")
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundStyle(app.martiniTypeScope.secondaryText)
                         MartiniTypeScopePicker(selection: $app.martiniTypeScope, dark: !isAllMode)
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                             ForEach(RankingCategory.allCases) { category in
@@ -4152,20 +4239,24 @@ struct RankingsView: View {
                                         selectedCategory = category
                                     }
                                 } label: {
+                                    let isSelected = selectedCategory == category
                                     VStack(alignment: .leading, spacing: 11) {
-                                        Image(systemName: category.symbol(for: app.martiniTypeScope)).font(.title2).foregroundStyle(isAllMode ? TinisColor.forest : TinisColor.gold)
-                                        Text(category.title(for: app.martiniTypeScope)).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(isAllMode ? TinisColor.ink : TinisColor.cream)
-                                        Text(selectedCategory == category ? "Viewing ranking" : "View ranking  →")
+                                        Image(systemName: category.symbol(for: app.martiniTypeScope))
+                                            .font(.system(size: 20, weight: .medium))
+                                            .symbolRenderingMode(.monochrome)
+                                            .foregroundStyle(isSelected ? TinisColor.gold : (isAllMode ? TinisColor.forest : TinisColor.cream.opacity(0.8)))
+                                        Text(category.title(for: app.martiniTypeScope)).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(isSelected ? TinisColor.ink : (isAllMode ? TinisColor.ink : TinisColor.cream))
+                                        Text(isSelected ? "Viewing ranking" : "View ranking  →")
                                             .font(.system(size: 10, design: .rounded))
-                                            .foregroundStyle(isAllMode ? TinisColor.moss : TinisColor.gold)
+                                            .foregroundStyle(isSelected ? TinisColor.ink.opacity(0.58) : (isAllMode ? TinisColor.moss : TinisColor.cream.opacity(0.64)))
                                     }
                                     .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
                                     .padding(14)
                                     .background(
                                         LinearGradient(
                                             colors: isAllMode
-                                                ? [TinisColor.cream, TinisColor.softWhite]
-                                                : [app.martiniTypeScope.accentColor.opacity(0.9), app.martiniTypeScope.accentColor.opacity(0.54)],
+                                                ? (isSelected ? [TinisColor.paleGold.opacity(0.58), TinisColor.softWhite] : [TinisColor.softWhite, TinisColor.cream])
+                                                : (isSelected ? [TinisColor.paleGold.opacity(0.58), TinisColor.softWhite] : [app.martiniTypeScope.accentColor.opacity(0.84), app.martiniTypeScope.accentColor.opacity(0.52)]),
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
                                         ),
@@ -4173,8 +4264,9 @@ struct RankingsView: View {
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 13)
-                                            .stroke(selectedCategory == category ? TinisColor.gold : (isAllMode ? TinisColor.line : TinisColor.cream.opacity(0.16)), lineWidth: selectedCategory == category ? 1.5 : 1)
+                                            .stroke(isSelected ? TinisColor.gold.opacity(0.82) : (isAllMode ? TinisColor.line.opacity(0.7) : TinisColor.cream.opacity(0.14)), lineWidth: isSelected ? 1.25 : 0.75)
                                     )
+                                    .shadow(color: isSelected ? TinisColor.ink.opacity(0.1) : .clear, radius: 10, y: 4)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -4225,7 +4317,7 @@ struct RankingsView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(isAllMode ? .light : .dark)
             .sheet(item: $app.selectedVenue) {
                 VenueDetailView(venue: $0)
                     .presentationDetents([.large])
@@ -4283,8 +4375,17 @@ struct ProfileView: View {
                             Text(app.firstName).font(.system(size: 27, design: .serif))
                             Text("Martini Palate").foregroundStyle(app.martiniTypeScope.secondaryText)
                         }.foregroundStyle(app.martiniTypeScope.primaryText)
-                        TasteTags(title: "YOU TEND TO LOVE", tags: ["Gin", "Very Cold", "Lightly Dirty", "Classic", "Up", "Olives", "Silky"])
-                        TasteTags(title: "YOU TEND TO DISLIKE", tags: ["Warm", "Watery", "Too Wet", "Overly Sweet"], dislike: true)
+                        TasteTags(
+                            title: "YOU TEND TO LOVE",
+                            tags: ["Gin", "Very Cold", "Lightly Dirty", "Classic", "Up", "Olives", "Silky"],
+                            titleColor: isAllMode ? TinisColor.moss : TinisColor.cream.opacity(0.76)
+                        )
+                        TasteTags(
+                            title: "YOU TEND TO DISLIKE",
+                            tags: ["Warm", "Watery", "Too Wet", "Overly Sweet"],
+                            dislike: true,
+                            titleColor: TinisColor.blush
+                        )
                         HStack(spacing: 12) {
                             StatCard(value: "\(String(format: "%.1f", app.venues.map(\.score).reduce(0, +) / Double(app.venues.count)))", label: "Average Rating")
                             StatCard(value: app.topVenue.name, label: "Your #1 Bar")
@@ -4296,7 +4397,7 @@ struct ProfileView: View {
                                     .tracking(1.2)
                                     .foregroundStyle(TinisColor.gold)
                                 Spacer()
-                                Text("Choose a lens")
+                                Text("Rank by")
                                     .font(.system(size: 10, design: .rounded))
                                     .foregroundStyle(app.martiniTypeScope.secondaryText)
                             }
@@ -4314,8 +4415,13 @@ struct ProfileView: View {
                                                 .foregroundStyle(topFilter == filter ? TinisColor.ink : (isAllMode ? TinisColor.ink.opacity(0.68) : TinisColor.cream.opacity(0.76)))
                                                 .padding(.horizontal, 11)
                                                 .padding(.vertical, 8)
-                                                .background(topFilter == filter ? TinisColor.cream : (isAllMode ? TinisColor.softWhite : app.martiniTypeScope.accentColor), in: Capsule())
-                                                .overlay(Capsule().stroke(topFilter == filter ? TinisColor.gold.opacity(0.45) : TinisColor.cream.opacity(0.14)))
+                                                .background(
+                                                    topFilter == filter
+                                                        ? (isAllMode ? TinisColor.paleGold.opacity(0.58) : TinisColor.cream)
+                                                        : (isAllMode ? TinisColor.softWhite : app.martiniTypeScope.accentColor),
+                                                    in: Capsule()
+                                                )
+                                                .overlay(Capsule().stroke(topFilter == filter ? TinisColor.gold.opacity(0.62) : (isAllMode ? TinisColor.line.opacity(0.65) : TinisColor.cream.opacity(0.14))))
                                         }
                                         .buttonStyle(.plain)
                                     }
@@ -4349,7 +4455,7 @@ struct ProfileView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(isAllMode ? .light : .dark)
             .sheet(item: $app.selectedVenue) {
                 VenueDetailView(venue: $0)
                     .presentationDetents([.large])
@@ -4743,12 +4849,13 @@ struct SettingsPanel<Content: View>: View {
             Text(title)
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .tracking(1.2)
-                .foregroundStyle(TinisColor.gold)
+                .foregroundStyle(TinisColor.moss)
             VStack(spacing: 12) { content }
                 .foregroundStyle(TinisColor.ink)
                 .padding(15)
-                .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(TinisColor.line.opacity(0.9)))
+                .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(TinisColor.line.opacity(0.72)))
+                .shadow(color: TinisColor.ink.opacity(0.06), radius: 10, y: 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -4828,7 +4935,7 @@ struct ProfileTopVenueRow: View {
         .foregroundStyle(TinisColor.ink)
         .padding(.horizontal, 11)
         .padding(.vertical, 8)
-        .background(TinisColor.cream)
+        .background(TinisColor.softWhite)
         .contentShape(Rectangle())
     }
 }
@@ -4837,9 +4944,10 @@ struct TasteTags: View {
     let title: String
     let tags: [String]
     var dislike = false
+    var titleColor = TinisColor.moss
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.caption.bold()).tracking(1.2).foregroundStyle(TinisColor.gold)
+            Text(title).font(.caption.bold()).tracking(1.2).foregroundStyle(titleColor)
             FlowLayout(spacing: 8) {
                 ForEach(tags, id: \.self) { tag in
                     Text(tag)
@@ -4847,8 +4955,8 @@ struct TasteTags: View {
                         .foregroundStyle(TinisColor.ink)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
-                        .background(dislike ? TinisColor.blush : TinisColor.cream, in: Capsule())
-                        .overlay(Capsule().stroke(dislike ? TinisColor.blush.opacity(0.6) : TinisColor.gold.opacity(0.32)))
+                        .background(dislike ? TinisColor.blush : TinisColor.softWhite, in: Capsule())
+                        .overlay(Capsule().stroke(dislike ? TinisColor.blush.opacity(0.7) : TinisColor.line.opacity(0.72)))
                 }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -4867,8 +4975,9 @@ struct StatCard: View {
             Text(value).font(.system(size: 22, design: .serif)).multilineTextAlignment(.center).lineLimit(2)
         }
         .foregroundStyle(TinisColor.ink).frame(maxWidth: .infinity, minHeight: 94).padding(10)
-        .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(TinisColor.gold.opacity(0.28)))
+        .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(TinisColor.line.opacity(0.72)))
+        .shadow(color: TinisColor.ink.opacity(0.06), radius: 10, y: 4)
     }
 }
 

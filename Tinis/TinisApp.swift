@@ -18,6 +18,9 @@ struct TinisApp: App {
                 .environmentObject(backend)
                 .tint(TinisColor.gold)
                 .task { await backend.start() }
+                .onOpenURL { url in
+                    Task { await backend.handleOpenURL(url) }
+                }
         }
     }
 }

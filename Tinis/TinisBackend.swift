@@ -4,6 +4,7 @@ import Supabase
 enum TinisBackendPhase: Equatable {
     case checking
     case signedOut
+    case emailSent(String)
     case needsAppleLink
     case needsInvite
     case ready
@@ -315,19 +316,51 @@ final class TinisBackend: ObservableObject {
         }
 
         do {
-            let session = try await client.auth.session
-            let hasAppleIdentity = session.user.identities?.contains {
-                $0.provider.caseInsensitiveCompare("apple") == .orderedSame
-            } ?? false
-
-            if hasAppleIdentity {
-                await loadMembership()
-            } else {
-                phase = .needsAppleLink
-            }
+            _ = try await client.auth.session
+            await loadMembership()
         } catch {
             phase = .signedOut
         }
+    }
+
+    func sendMagicLink(to email: String) async {
+        let normalizedEmail = email
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard Self.looksLikeEmail(normalizedEmail) else {
+            errorMessage = "Enter a valid email address."
+            return
+        }
+        guard let client else { return }
+
+        errorMessage = nil
+        do {
+            try await client.auth.signInWithOTP(
+                email: normalizedEmail,
+                redirectTo: URL(string: "tinis://login-callback")!,
+                shouldCreateUser: true
+            )
+            phase = .emailSent(normalizedEmail)
+        } catch {
+            errorMessage = "We could not send that link. Check the email and try again."
+        }
+    }
+
+    func handleOpenURL(_ url: URL) async {
+        guard let client, url.scheme?.caseInsensitiveCompare("tinis") == .orderedSame else { return }
+        errorMessage = nil
+        do {
+            _ = try await client.auth.session(from: url)
+            await loadMembership()
+        } catch {
+            errorMessage = "That sign-in link could not be completed. Please request a new one."
+            phase = .signedOut
+        }
+    }
+
+    func useDifferentEmail() {
+        errorMessage = nil
+        phase = .signedOut
     }
 
     func continueWithApple(
@@ -357,7 +390,7 @@ final class TinisBackend: ObservableObject {
                 _ = try? await client.auth.update(
                     user: UserAttributes(data: ["display_name": .string(trimmedName)])
                 )
-                try? await client
+                _ = try? await client
                     .from("profiles")
                     .update(ProfileUpdate(displayName: trimmedName))
                     .eq("id", value: session.user.id)
@@ -376,6 +409,12 @@ final class TinisBackend: ObservableObject {
 
     func reportSignInError(_ message: String) {
         errorMessage = message
+    }
+
+    private static func looksLikeEmail(_ value: String) -> Bool {
+        guard let at = value.firstIndex(of: "@"), at != value.startIndex else { return false }
+        let domain = value[value.index(after: at)...]
+        return domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
     }
 
     func updateDisplayName(_ name: String) async -> Bool {

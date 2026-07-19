@@ -25,11 +25,13 @@ The starter club is `tini's martini club`. Its invite code is provisioned direct
 
 ## Authentication
 
-The app uses native Sign in with Apple and exchanges Apple's identity token for a persistent Supabase session. Enable the Apple provider in Supabase Auth and add the native bundle identifier `com.veronicaday.tinis` to its Client IDs.
+While Apple Developer enrollment is pending, the app uses Supabase passwordless email links with the `tinis://login-callback` URL scheme. The link must be opened on the iPhone or simulator where the sign-in request began so the PKCE session can complete.
+
+The native Sign in with Apple implementation remains in the codebase for re-enabling after enrollment is active. Enable the Apple provider in Supabase Auth and add the native bundle identifier `com.veronicaday.tinis` to its Client IDs.
 
 Manual identity linking is enabled during the transition so an existing email-authenticated member can attach Apple to the same Supabase user without losing ratings.
 
-The Xcode target must use an Apple Developer team with the Sign in with Apple capability enabled. Native-only Apple authentication does not require a Services ID, web redirect, or six-month client-secret rotation.
+When Apple sign-in is restored, the Xcode target must use an Apple Developer team with the Sign in with Apple capability enabled. Native-only Apple authentication does not require a Services ID, web redirect, or six-month client-secret rotation.
 
 ## Database password
 

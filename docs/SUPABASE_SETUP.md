@@ -19,15 +19,15 @@ The initial migration is `supabase/migrations/202607150001_initial_tinis_schema.
 
 It creates the profiles, clubs, memberships, invites, venues, ratings, private notes, personal ranks, comparisons, blocks, and reports tables. It also installs row-level security policies, friend-feed and leaderboard views, rating RPCs, and the private `rating-photos` storage bucket.
 
-The starter club is `tini's martini club`. Its invite code is `DIRTY`, with a maximum of 10 uses.
+The starter club is `tini's martini club`. Its invite code is provisioned directly in Supabase and is never stored in this repository.
 
 ## Authentication
 
-Supabase email magic-link sign-in is enabled. The allowed redirect URL is:
+The app uses native Sign in with Apple and exchanges Apple's identity token for a persistent Supabase session. Enable the Apple provider in Supabase Auth and add the native bundle identifier `com.veronicaday.tinis` to its Client IDs.
 
-`tinis://login-callback`
+Manual identity linking is enabled during the transition so an existing email-authenticated member can attach Apple to the same Supabase user without losing ratings.
 
-The same custom URL scheme is registered in `Tinis/Info.plist`.
+The Xcode target must use an Apple Developer team with the Sign in with Apple capability enabled. Native-only Apple authentication does not require a Services ID, web redirect, or six-month client-secret rotation.
 
 ## Database password
 

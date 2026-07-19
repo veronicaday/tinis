@@ -18,9 +18,6 @@ struct TinisApp: App {
                 .environmentObject(backend)
                 .tint(TinisColor.gold)
                 .task { await backend.start() }
-                .onOpenURL { url in
-                    Task { await backend.handleOpenURL(url) }
-                }
         }
     }
 }
@@ -156,7 +153,7 @@ enum ProfileTopFilter: String, CaseIterable, Identifiable {
     var metricCaption: String {
         switch self {
         case .topRated: return "SCORE"
-        case .dirtiest: return "DIRTY"
+        case .dirtiest: return "DIRTINESS"
         case .cleanest: return "CLEAN"
         case .coldest: return "COLD"
         case .warmest: return "WARM"
@@ -191,7 +188,13 @@ enum ProfileTopFilter: String, CaseIterable, Identifiable {
 
 @MainActor
 final class TinisStore: ObservableObject {
-    @Published var hasOnboarded = false
+    private static let onboardingKey = "tinis.hasEnteredClub"
+
+    @Published var hasOnboarded: Bool {
+        didSet {
+            UserDefaults.standard.set(hasOnboarded, forKey: Self.onboardingKey)
+        }
+    }
     @Published var selectedTab = 0
     @Published var firstName = "Veronica"
     @Published var profilePhotoData: Data?
@@ -206,17 +209,41 @@ final class TinisStore: ObservableObject {
     ]
 
     init() {
+        let storedOnboardingState = UserDefaults.standard.bool(forKey: Self.onboardingKey)
 #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
-            hasOnboarded = true
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-ui-testing") {
+            hasOnboarded = !launchArguments.contains("-ui-testing-welcome")
+        } else {
+            hasOnboarded = storedOnboardingState
         }
-        if ProcessInfo.processInfo.arguments.contains("-ui-testing-search") {
+        if launchArguments.contains("-ui-testing-search") {
             selectedTab = 1
         }
+#else
+        hasOnboarded = storedOnboardingState
 #endif
     }
 
     var topVenue: MartiniVenue { venues.sorted { $0.elo > $1.elo }.first! }
+
+    func existingVenue(named name: String, location: String) -> MartiniVenue? {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return nil }
+
+        return venues.first {
+            $0.name.localizedCaseInsensitiveCompare(trimmedName) == .orderedSame &&
+            $0.location.localizedCaseInsensitiveCompare(trimmedLocation) == .orderedSame
+        }
+    }
+
+    func topVenue(excluding venue: MartiniVenue?) -> MartiniVenue? {
+        venues
+            .filter { $0.id != venue?.id }
+            .sorted { $0.elo > $1.elo }
+            .first
+    }
 
     func updateElo(for venue: MartiniVenue, to elo: Int) {
         guard let index = venues.firstIndex(where: { $0.id == venue.id }) else { return }
@@ -400,8 +427,12 @@ struct TinisRootView: View {
 
     var body: some View {
         Group {
-            if backend.isConfigured && backend.phase != .ready {
-                TinisAuthGateView()
+            if backend.isConfigured {
+                if backend.phase == .ready {
+                    MainTabView()
+                } else {
+                    TinisAuthGateView()
+                }
             } else if app.hasOnboarded {
                 MainTabView()
             } else {
@@ -487,7 +518,7 @@ struct WelcomeView: View {
                 .frame(height: 510)
                 .opacity(0.94)
                 .mask(LinearGradient(colors: [.clear, .white, .white], startPoint: .top, endPoint: .bottom))
-                .offset(y: 300)
+                .offset(y: 225)
                 .ignoresSafeArea()
             LinearGradient(colors: [TinisColor.darkestForest.opacity(0.95), .clear], startPoint: .top, endPoint: .center)
                 .ignoresSafeArea()
@@ -507,11 +538,12 @@ struct WelcomeView: View {
                     .tracking(3.5)
                     .foregroundStyle(TinisColor.gold)
                 Capsule().fill(TinisColor.gold).frame(width: 28, height: 1).padding(.vertical, 24)
-                Text("The dirtier,\nthe better.")
+                Text("The dirtier, the better.")
                     .font(.system(size: 17, weight: .regular, design: .serif))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(TinisColor.cream)
-                    .lineSpacing(4)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
                 Spacer()
                 Button {
                     app.hasOnboarded = true
@@ -1710,16 +1742,36 @@ struct AddMartiniView: View {
                             )
                         }
                         if stage == 1 { TraitsStep(traits: $traits, spirit: spirit, garnish: garnish, servingStyle: servingStyle) }
-                        if stage == 2 { DuelStep(comparison: app.topVenue, choice: $duelChoice) }
+                        if stage == 2 {
+                            if let comparison = rankingComparison {
+                                DuelStep(
+                                    comparison: comparison,
+                                    choice: $duelChoice,
+                                    newTitle: existingRankedVenue?.name ?? "The new martini",
+                                    newSubtitle: existingRankedVenue == nil ? "Unranked" : "Your updated pour",
+                                    comparisonSubtitle: existingRankedVenue == nil ? "Your current #1" : "Another favorite"
+                                )
+                            } else {
+                                FirstRankingStep()
+                            }
+                        }
                         Button {
                             if stage < 2 { stage += 1 } else {
                                 guard !isSaving else { return }
                                 isSaving = true
-                                let comparison = app.topVenue
-                                let updatedElo = TinisElo.updatedRatings(
-                                    pastRating: comparison.elo,
-                                    choice: duelChoice
-                                )
+                                let existingVenue = existingRankedVenue
+                                let comparison = rankingComparison
+                                let startingElo = existingVenue?.elo ?? TinisElo.startingRating
+                                let updatedElo: (new: Int, past: Int)
+                                if let comparison {
+                                    updatedElo = TinisElo.updatedRatings(
+                                        newRating: startingElo,
+                                        pastRating: comparison.elo,
+                                        choice: duelChoice
+                                    )
+                                } else {
+                                    updatedElo = (startingElo, startingElo)
+                                }
                                 let newVenue = MartiniVenue(
                                     name: venueName.isEmpty ? "A very good martini" : venueName,
                                     location: location,
@@ -1755,7 +1807,9 @@ struct AddMartiniView: View {
                                                 photoData: photoData
                                             )
                                             if let photoWarning {
-                                                app.updateElo(for: comparison, to: updatedElo.past)
+                                                if let comparison {
+                                                    app.updateElo(for: comparison, to: updatedElo.past)
+                                                }
                                                 app.add(newVenue)
                                                 resetForm()
                                                 didSaveDespiteNotice = true
@@ -1763,7 +1817,9 @@ struct AddMartiniView: View {
                                                 return
                                             }
                                         }
-                                        app.updateElo(for: comparison, to: updatedElo.past)
+                                        if let comparison {
+                                            app.updateElo(for: comparison, to: updatedElo.past)
+                                        }
                                         app.add(newVenue)
                                         resetForm()
                                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -1877,6 +1933,14 @@ struct AddMartiniView: View {
         let dirty = (traits["Dirtiness"] ?? 0) >= 3 ? "lightly dirty" : "clean"
         let cold = (traits["Chilliness"] ?? 0) >= 3 ? "very cold" : "soft"
         return "\(cold), \(dirty)"
+    }
+
+    private var existingRankedVenue: MartiniVenue? {
+        app.existingVenue(named: venueName, location: location)
+    }
+
+    private var rankingComparison: MartiniVenue? {
+        app.topVenue(excluding: existingRankedVenue)
     }
 
     private var availableFriends: [TinisClubFriend] {
@@ -2403,6 +2467,9 @@ struct TraitGlyph: View {
 struct DuelStep: View {
     let comparison: MartiniVenue
     @Binding var choice: DuelChoice?
+    let newTitle: String
+    let newSubtitle: String
+    let comparisonSubtitle: String
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text("Which would you rather order again?")
@@ -2411,8 +2478,8 @@ struct DuelStep: View {
             Text("This keeps your personal rankings interesting without making every rating a chore.")
                 .foregroundStyle(TinisColor.ink.opacity(0.62))
             HStack(spacing: 14) {
-                DuelCard(title: "The new martini", subtitle: "Unranked", selected: choice == .new) { choice = .new }
-                DuelCard(title: comparison.name, subtitle: "Your current #1", selected: choice == .old) { choice = .old }
+                DuelCard(title: newTitle, subtitle: newSubtitle, selected: choice == .new) { choice = .new }
+                DuelCard(title: comparison.name, subtitle: comparisonSubtitle, selected: choice == .old) { choice = .old }
             }
             HStack {
                 Button("Too close") { choice = .tie }
@@ -2429,6 +2496,21 @@ struct DuelStep: View {
                     .font(.subheadline)
                     .foregroundStyle(TinisColor.forest)
             }
+        }
+    }
+}
+
+struct FirstRankingStep: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Your first ranked martini")
+                .font(.system(size: 27, design: .serif))
+                .foregroundStyle(TinisColor.ink)
+            Text("Save this one now. Your next pour will unlock a quick head-to-head comparison.")
+                .foregroundStyle(TinisColor.ink.opacity(0.62))
+            MartiniArtwork(variant: 1)
+                .frame(height: 250)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
         }
     }
 }
@@ -2524,7 +2606,7 @@ enum RankingCategory: String, CaseIterable, Identifiable {
     func metricCaption(for venue: MartiniVenue) -> String {
         switch self {
         case .bestOverall: return "RATING"
-        case .dirtiest: return "DIRTY"
+        case .dirtiest: return "DIRTINESS"
         case .bestValue: return "\(String(format: "%.1f", venue.score)) RATING"
         case .mostUnique: return "UNIQUE"
         }
@@ -3038,9 +3120,6 @@ struct ProfileSettingsView: View {
     @EnvironmentObject private var backend: TinisBackend
     @Environment(\.dismiss) private var dismiss
 
-    @State private var copiedInviteCode = false
-    @State private var isRefreshing = false
-    @State private var didRefresh = false
     @State private var isConfirmingSignOut = false
 
     private var memberCount: Int {
@@ -3067,55 +3146,17 @@ struct ProfileSettingsView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Invite code")
                                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    Text("DIRTY")
-                                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                                        .tracking(3)
-                                        .foregroundStyle(TinisColor.forest)
+                                    Text("Share it privately with friends")
+                                        .font(.system(size: 12, design: .rounded))
+                                        .foregroundStyle(TinisColor.ink.opacity(0.62))
                                 }
                                 Spacer()
-                                Button {
-                                    UIPasteboard.general.string = "DIRTY"
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        copiedInviteCode = true
-                                    }
-                                } label: {
-                                    Label(copiedInviteCode ? "Copied" : "Copy", systemImage: copiedInviteCode ? "checkmark" : "doc.on.doc")
-                                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 8)
-                                        .background(TinisColor.paleGold.opacity(0.42), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
                             }
                             Divider()
-                            ShareLink(item: "Join my private tini’s martini club. Use invite code DIRTY.") {
+                            ShareLink(item: "Join my private tini’s martini club. Ask me for the club code.") {
                                 SettingsActionLabel(icon: "square.and.arrow.up", title: "Share club invite")
                             }
                             .buttonStyle(.plain)
-                        }
-
-                        SettingsPanel(title: "DATA") {
-                            Button {
-                                isRefreshing = true
-                                didRefresh = false
-                                Task {
-                                    await backend.refreshSharedData()
-                                    isRefreshing = false
-                                    didRefresh = true
-                                }
-                            } label: {
-                                HStack {
-                                    SettingsActionLabel(icon: "arrow.clockwise", title: isRefreshing ? "Refreshing club…" : "Refresh club data")
-                                    Spacer()
-                                    if isRefreshing {
-                                        ProgressView().tint(TinisColor.forest)
-                                    } else if didRefresh {
-                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(TinisColor.moss)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isRefreshing)
                         }
 
                         SettingsPanel(title: "ABOUT") {
@@ -3159,7 +3200,7 @@ struct ProfileSettingsView: View {
                     }
                 }
             } message: {
-                Text("You can sign back in anytime with your email.")
+                Text("Your ratings stay safe. Sign in with the same Apple Account to return to the club.")
             }
         }
     }

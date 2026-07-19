@@ -413,9 +413,9 @@ revoke all on function public.save_rating(uuid, text, text, numeric, numeric, nu
 grant execute on function public.save_rating(uuid, text, text, numeric, numeric, numeric, numeric, numeric, text, text, text, numeric) to authenticated;
 
 insert into public.clubs (name) values ('tini''s martini club');
-insert into public.club_invites (club_id, code_hash, max_uses)
-select id, extensions.crypt('DIRTY', extensions.gen_salt('bf')), 10
-from public.clubs where name = 'tini''s martini club';
+
+-- Invite credentials are provisioned out-of-band after migration and are
+-- intentionally never stored in source control.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('rating-photos', 'rating-photos', false, 10485760,

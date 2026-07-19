@@ -4,7 +4,7 @@ import Supabase
 enum TinisBackendPhase: Equatable {
     case checking
     case signedOut
-    case emailSent(String)
+    case needsAppleLink
     case needsInvite
     case ready
     case unavailable
@@ -303,48 +303,67 @@ final class TinisBackend: ObservableObject {
         }
 
         do {
-            _ = try await client.auth.session
-            await loadMembership()
+            let session = try await client.auth.session
+            let hasAppleIdentity = session.user.identities?.contains {
+                $0.provider.caseInsensitiveCompare("apple") == .orderedSame
+            } ?? false
+
+            if hasAppleIdentity {
+                await loadMembership()
+            } else {
+                phase = .needsAppleLink
+            }
         } catch {
             phase = .signedOut
         }
     }
 
-    func sendMagicLink(to email: String) async {
+    func continueWithApple(
+        idToken: String,
+        nonce: String,
+        displayName: String?,
+        linkExistingAccount: Bool
+    ) async {
         guard let client else { return }
-        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedEmail.contains("@") else {
-            errorMessage = "Enter a valid email address."
-            return
-        }
-
         errorMessage = nil
+
         do {
-            try await client.auth.signInWithOTP(
-                email: normalizedEmail,
-                redirectTo: URL(string: "tinis://login-callback")!
+            let credentials = OpenIDConnectCredentials(
+                provider: .apple,
+                idToken: idToken,
+                nonce: nonce
             )
-            phase = .emailSent(normalizedEmail)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
+            let session: Session
+            if linkExistingAccount {
+                session = try await client.auth.linkIdentityWithIdToken(credentials: credentials)
+            } else {
+                session = try await client.auth.signInWithIdToken(credentials: credentials)
+            }
 
-    func handleOpenURL(_ url: URL) async {
-        guard let client, url.scheme == "tinis" else { return }
-        errorMessage = nil
-        do {
-            _ = try await client.auth.session(from: url)
+            let trimmedName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmedName, !trimmedName.isEmpty {
+                _ = try? await client.auth.update(
+                    user: UserAttributes(data: ["display_name": .string(trimmedName)])
+                )
+                try? await client
+                    .from("profiles")
+                    .update(ProfileUpdate(displayName: trimmedName))
+                    .eq("id", value: session.user.id)
+                    .execute()
+                currentDisplayName = trimmedName
+            }
+
             await loadMembership()
         } catch {
-            errorMessage = "That sign-in link could not be completed. Please request a new one."
-            phase = .signedOut
+            errorMessage = linkExistingAccount
+                ? "Apple could not be connected to this account. Please try again."
+                : "Apple sign-in could not be completed. Please try again."
+            phase = linkExistingAccount ? .needsAppleLink : .signedOut
         }
     }
 
-    func useDifferentEmail() {
-        errorMessage = nil
-        phase = .signedOut
+    func reportSignInError(_ message: String) {
+        errorMessage = message
     }
 
     func updateDisplayName(_ name: String) async -> Bool {

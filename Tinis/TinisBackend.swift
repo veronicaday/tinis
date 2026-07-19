@@ -39,6 +39,7 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
     let avatarPath: String?
     let venueID: UUID
     let venueName: String
+    let martiniType: String?
     let googlePlaceID: String?
     let fullAddress: String?
     let city: String
@@ -68,6 +69,7 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
         case avatarPath = "avatar_path"
         case venueID = "venue_id"
         case venueName = "venue_name"
+        case martiniType = "martini_type"
         case googlePlaceID = "google_place_id"
         case fullAddress = "full_address"
         case city, region, score, dirtiness, chilliness, uniqueness, spirit, garnish, price, companions
@@ -86,6 +88,7 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
     let clubID: UUID
     let venueID: UUID
     let venueName: String
+    let martiniType: String?
     let googlePlaceID: String?
     let fullAddress: String?
     let city: String
@@ -107,12 +110,13 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
     let isOwnRating: Bool?
     let latestVisit: String
 
-    var id: UUID { venueID }
+    var id: String { "\(venueID.uuidString.lowercased())|\(martiniType ?? "classic")" }
 
     enum CodingKeys: String, CodingKey {
         case clubID = "club_id"
         case venueID = "venue_id"
         case venueName = "venue_name"
+        case martiniType = "martini_type"
         case googlePlaceID = "google_place_id"
         case fullAddress = "full_address"
         case city, region, score, dirtiness, chilliness, uniqueness
@@ -148,6 +152,7 @@ private struct SaveRatingParameters: Encodable {
     let price: Double?
     let googlePlaceID: String?
     let fullAddress: String?
+    let martiniType: String
 
     enum CodingKeys: String, CodingKey {
         case clubID = "p_club_id"
@@ -164,6 +169,7 @@ private struct SaveRatingParameters: Encodable {
         case price = "p_price"
         case googlePlaceID = "p_google_place_id"
         case fullAddress = "p_full_address"
+        case martiniType = "p_martini_type"
     }
 }
 
@@ -570,7 +576,8 @@ final class TinisBackend: ObservableObject {
             servingStyle: servingStyle.lowercased(),
             price: Double(price),
             googlePlaceID: venue.googlePlaceID,
-            fullAddress: venue.fullAddress
+            fullAddress: venue.fullAddress,
+            martiniType: venue.martiniType.rawValue
         )
 
         let ratingID: UUID
@@ -581,6 +588,9 @@ final class TinisBackend: ObservableObject {
                 .value
         } catch {
             let failure = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+            if venue.martiniType == .espresso {
+                throw error
+            }
             guard
                 failure.contains("p_serving_style") ||
                 failure.contains("function") ||

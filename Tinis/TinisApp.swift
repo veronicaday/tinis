@@ -46,6 +46,13 @@ struct MartiniVenue: Identifiable, Hashable {
     var price: Double? = nil
     var note: String = ""
     var companions: [String] = []
+    var backendRatingID: UUID? = nil
+    var ratingOwnerID: UUID? = nil
+    var ratingOwnerName: String? = nil
+    var isOwnRating: Bool = true
+    var cheersCount: Int = 0
+    var isCheered: Bool = false
+    var visitedAt: String? = nil
 }
 
 enum DuelChoice: String {
@@ -99,6 +106,22 @@ struct FriendActivity: Identifiable {
     let avatarHex: UInt
     let artworkVariant: Int
     let photoURL: URL?
+    var avatarURL: URL? = nil
+    var ratingID: UUID? = nil
+    var userID: UUID? = nil
+    var dirtiness: Double = 2
+    var chilliness: Double = 2
+    var uniqueness: Double = 2
+    var spiritForward: Double = 2
+    var spirit: String = "Unknown"
+    var garnish: String = "Unknown"
+    var servingStyle: String = "Unknown"
+    var price: Double? = nil
+    var companions: [String] = []
+    var visitedAt: String? = nil
+    var isOwnRating: Bool = false
+    var cheersCount: Int = 0
+    var isCheered: Bool = false
 }
 
 enum ProfileTopFilter: String, CaseIterable, Identifiable {
@@ -171,6 +194,7 @@ final class TinisStore: ObservableObject {
     @Published var hasOnboarded = false
     @Published var selectedTab = 0
     @Published var firstName = "Veronica"
+    @Published var profilePhotoData: Data?
     @Published var selectedVenue: MartiniVenue?
     @Published var pendingGooglePlace: GooglePlaceSelection?
     @Published var venues: [MartiniVenue] = [
@@ -227,6 +251,20 @@ final class TinisStore: ObservableObject {
         }
     }
 
+    func update(_ venue: MartiniVenue) {
+        guard let index = venues.firstIndex(where: {
+            if let ratingID = venue.backendRatingID {
+                return $0.backendRatingID == ratingID
+            }
+            return $0.id == venue.id || (
+                $0.name.localizedCaseInsensitiveCompare(venue.name) == .orderedSame &&
+                $0.location.localizedCaseInsensitiveCompare(venue.location) == .orderedSame
+            )
+        }) else { return }
+        venues[index] = venue
+        selectedVenue = venue
+    }
+
     func syncFromBackend(_ rows: [TinisLeaderboardRow]) {
         guard !rows.isEmpty else { return }
         venues = rows.map { row in
@@ -252,7 +290,11 @@ final class TinisStore: ObservableObject {
                 servingStyle: row.servingStyle?.capitalized ?? "Unknown",
                 price: row.price,
                 note: row.publicNote ?? "",
-                companions: row.companions ?? []
+                companions: row.companions ?? [],
+                backendRatingID: row.ratingID,
+                ratingOwnerID: row.ratingUserID,
+                isOwnRating: row.isOwnRating ?? false,
+                visitedAt: row.latestVisit
             )
         }
     }
@@ -273,14 +315,15 @@ enum TinisColor {
     static let forest = Color(hex: 0x063C2E)
     static let deepForest = Color(hex: 0x00271D)
     static let darkestForest = Color(hex: 0x001A13)
-    static let cream = Color(hex: 0xF8F3EC)
-    static let paper = Color(hex: 0xEFE7DC)
+    static let cream = Color(hex: 0xF6EFDF)
+    static let paper = Color(hex: 0xEDE2CD)
+    static let softWhite = Color(hex: 0xFAF4E8)
     static let ink = Color(hex: 0x17231E)
     static let gold = Color(hex: 0xC9AE72)
-    static let paleGold = Color(hex: 0xE7D7AD)
+    static let paleGold = Color(hex: 0xE4D1A3)
     static let blush = Color(hex: 0xDDAEA7)
     static let moss = Color(hex: 0x718155)
-    static let line = Color(hex: 0xD8CCBC)
+    static let line = Color(hex: 0xD4C2A2)
 }
 
 extension Color {
@@ -290,6 +333,64 @@ extension Color {
                   green: Double((hex >> 8) & 0xFF) / 255,
                   blue: Double(hex & 0xFF) / 255,
                   opacity: opacity)
+    }
+}
+
+struct ProfileAvatarView: View {
+    let name: String
+    var imageData: Data? = nil
+    var imageURL: URL? = nil
+    var size: CGFloat = 88
+    var fallbackColor: Color? = nil
+    var borderColor: Color = TinisColor.gold.opacity(0.65)
+
+    private var localImage: UIImage? {
+        imageData.flatMap(UIImage.init(data:))
+    }
+
+    var body: some View {
+        Group {
+            if let localImage {
+                Image(uiImage: localImage)
+                    .resizable()
+                    .scaledToFill()
+            } else if let imageURL {
+                AsyncImage(url: imageURL, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
+                    if case .success(let image) = phase {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(borderColor, lineWidth: 1.5))
+        .accessibilityLabel("Profile photo for \(name)")
+    }
+
+    private var fallback: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0xD75462), Color(hex: 0xD28B3B)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            if let fallbackColor {
+                Circle().fill(fallbackColor)
+            }
+            Text(String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1)).uppercased())
+                .font(.system(size: size * 0.4, weight: .medium, design: .serif))
+                .foregroundStyle(.white)
+        }
     }
 }
 
@@ -515,6 +616,7 @@ struct TinisTabBar: View {
 struct HomeView: View {
     @EnvironmentObject private var app: TinisStore
     @EnvironmentObject private var backend: TinisBackend
+    @State private var demoCheeredIDs: Set<UUID> = []
 
     private let demoActivity = [
         FriendActivity(friend: "Sarah", initials: "S", venueName: "Bemelmans Bar", location: "New York, NY", score: 9.2, trait: "Very cold · lightly dirty", note: "Perfectly cold and exactly dirty enough.", time: "12 min ago", rankingUpdate: "New #1", avatarHex: 0xC85B68, artworkVariant: 0, photoURL: nil),
@@ -524,11 +626,22 @@ struct HomeView: View {
     ]
 
     private var activity: [FriendActivity] {
-        guard backend.isConfigured else { return demoActivity }
+        guard backend.isConfigured else {
+            return demoActivity.map { item in
+                var updated = item
+                updated.isCheered = demoCheeredIDs.contains(item.id)
+                updated.cheersCount += updated.isCheered ? 1 : 0
+                return updated
+            }
+        }
         return backend.friendFeed.enumerated().map { index, row in
             let initial = String(row.displayName.prefix(1)).uppercased()
             let cold = (row.chilliness ?? 2) >= 3 ? "Very cold" : "Soft"
             let dirty = (row.dirtiness ?? 2) >= 3 ? "dirty" : "clean"
+            let cheers = backend.cheersByRating[row.id] ?? TinisCheersState(
+                count: row.cheersCount ?? 0,
+                isCheered: row.cheeredByMe ?? false
+            )
             return FriendActivity(
                 friend: row.displayName,
                 initials: initial,
@@ -541,9 +654,54 @@ struct HomeView: View {
                 rankingUpdate: "New rating",
                 avatarHex: [0xC85B68, 0x5A9181, 0xA475B5, 0xB27645][index % 4],
                 artworkVariant: index % 4,
-                photoURL: backend.photoURLs[row.id]
+                photoURL: backend.photoURLs[row.id],
+                avatarURL: backend.avatarURLs[row.userID],
+                ratingID: row.id,
+                userID: row.userID,
+                dirtiness: row.dirtiness ?? 2,
+                chilliness: row.chilliness ?? 2,
+                uniqueness: row.uniqueness ?? 2,
+                spiritForward: row.spiritForward ?? 2,
+                spirit: row.spirit?.capitalized ?? "Unknown",
+                garnish: row.garnish?.capitalized ?? "Unknown",
+                servingStyle: row.servingStyle?.capitalized ?? "Unknown",
+                price: row.price,
+                companions: row.companions ?? [],
+                visitedAt: row.visitedAt,
+                isOwnRating: backend.currentUserID == row.userID,
+                cheersCount: cheers.count,
+                isCheered: cheers.isCheered
             )
         }
+    }
+
+    private func detailVenue(for activity: FriendActivity) -> MartiniVenue {
+        MartiniVenue(
+            name: activity.venueName,
+            location: activity.location,
+            score: activity.score,
+            ratingCount: 1,
+            date: activity.time,
+            trait: activity.trait,
+            dirtiness: activity.dirtiness,
+            chilliness: activity.chilliness,
+            uniqueness: activity.uniqueness,
+            spiritForward: activity.spiritForward,
+            elo: TinisElo.startingRating,
+            spirit: activity.spirit,
+            garnish: activity.garnish,
+            servingStyle: activity.servingStyle,
+            price: activity.price,
+            note: activity.note,
+            companions: activity.companions,
+            backendRatingID: activity.ratingID,
+            ratingOwnerID: activity.userID,
+            ratingOwnerName: activity.friend,
+            isOwnRating: activity.isOwnRating,
+            cheersCount: activity.cheersCount,
+            isCheered: activity.isCheered,
+            visitedAt: activity.visitedAt
+        )
     }
 
     var body: some View {
@@ -603,9 +761,19 @@ struct HomeView: View {
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(TinisColor.gold.opacity(0.22)))
                         } else {
                             ForEach(activity) { item in
-                                FriendActivityCard(activity: item) {
-                                    app.selectedVenue = app.venues.first { $0.name == item.venueName }
-                                }
+                                FriendActivityCard(
+                                    activity: item,
+                                    action: { app.selectedVenue = detailVenue(for: item) },
+                                    cheersAction: {
+                                        if let ratingID = item.ratingID {
+                                            Task { await backend.toggleCheers(for: ratingID) }
+                                        } else if demoCheeredIDs.contains(item.id) {
+                                            demoCheeredIDs.remove(item.id)
+                                        } else {
+                                            demoCheeredIDs.insert(item.id)
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
@@ -626,16 +794,20 @@ struct HomeView: View {
 struct FriendActivityCard: View {
     let activity: FriendActivity
     let action: () -> Void
+    let cheersAction: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 13) {
+            Button(action: action) {
+                VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 10) {
-                    Circle()
-                        .fill(Color(hex: activity.avatarHex))
-                        .frame(width: 38, height: 38)
-                        .overlay(Text(activity.initials).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.white))
-                        .overlay(Circle().stroke(TinisColor.gold.opacity(0.42)))
+                    ProfileAvatarView(
+                        name: activity.friend,
+                        imageURL: activity.avatarURL,
+                        size: 38,
+                        fallbackColor: Color(hex: activity.avatarHex),
+                        borderColor: TinisColor.gold.opacity(0.42)
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(activity.friend)
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -680,15 +852,52 @@ struct FriendActivityCard: View {
                     .font(.system(size: 14, design: .serif))
                     .foregroundStyle(TinisColor.ink.opacity(0.78))
                     .lineSpacing(2)
+                }
+                .foregroundStyle(TinisColor.ink)
             }
-            .foregroundStyle(TinisColor.ink)
-            .padding(14)
-            .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 15))
-            .overlay(RoundedRectangle(cornerRadius: 15).stroke(TinisColor.gold.opacity(0.28)))
-            .shadow(color: .black.opacity(0.14), radius: 18, y: 8)
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(activity.friend) rated \(activity.venueName) \(activity.score, format: .number.precision(.fractionLength(1))). \(activity.rankingUpdate)")
+
+            Divider().overlay(TinisColor.line.opacity(0.8))
+
+            HStack {
+                if activity.isOwnRating {
+                    Label("Your rating", systemImage: "pencil")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.moss)
+                } else {
+                    Button(action: cheersAction) {
+                        HStack(spacing: 6) {
+                            Text("🍸")
+                            Text("Cheers")
+                            if activity.cheersCount > 0 {
+                                Text("\(activity.cheersCount)")
+                                    .monospacedDigit()
+                            }
+                        }
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(activity.isCheered ? TinisColor.cream : TinisColor.forest)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(activity.isCheered ? TinisColor.forest : TinisColor.paleGold.opacity(0.38), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(activity.isCheered ? "Remove cheers" : "Cheers this rating")
+                }
+                Spacer()
+                Button(action: action) {
+                    Label("Details", systemImage: "chevron.right")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.ink.opacity(0.48))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(activity.friend) rated \(activity.venueName) \(activity.score, format: .number.precision(.fractionLength(1))). \(activity.rankingUpdate)")
+        .padding(14)
+        .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(TinisColor.gold.opacity(0.28)))
+        .shadow(color: .black.opacity(0.14), radius: 18, y: 8)
     }
 }
 
@@ -901,20 +1110,29 @@ struct SearchView: View {
 }
 
 struct VenueDetailView: View {
-    let venue: MartiniVenue
+    @EnvironmentObject private var app: TinisStore
+    @EnvironmentObject private var backend: TinisBackend
     @Environment(\.dismiss) private var dismiss
+    @State private var displayedVenue: MartiniVenue
+    @State private var isEditingRating = false
+    @State private var isUpdatingCheers = false
+
+    init(venue: MartiniVenue) {
+        _displayedVenue = State(initialValue: venue)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ZStack(alignment: .bottomLeading) {
-                        MartiniArtwork(variant: abs(venue.name.hashValue) % 4)
+                        MartiniArtwork(variant: abs(displayedVenue.name.hashValue) % 4)
                             .frame(height: 285)
                         LinearGradient(colors: [.clear, Color.black.opacity(0.84)], startPoint: .center, endPoint: .bottom)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(venue.name)
+                            Text(displayedVenue.name)
                                 .font(.system(size: 30, design: .serif))
-                            Text(venue.location)
+                            Text(displayedVenue.location)
                                 .font(.system(size: 12, design: .rounded))
                                 .opacity(0.74)
                         }
@@ -926,38 +1144,73 @@ struct VenueDetailView: View {
 
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("YOUR LATEST RATING")
+                            Text(displayedVenue.isOwnRating ? "YOUR LATEST RATING" : "\((displayedVenue.ratingOwnerName ?? "FRIEND").uppercased())’S RATING")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .tracking(1.2)
                                 .foregroundStyle(TinisColor.moss)
-                            Text(venue.date).font(.caption).foregroundStyle(.secondary)
+                            Text(displayedVenue.date).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        ScoreBadge(score: venue.score)
+                        ScoreBadge(score: displayedVenue.score)
                     }
 
-                    MartiniBasicsSummary(venue: venue)
+                    if !displayedVenue.isOwnRating {
+                        Button {
+                            guard !isUpdatingCheers else { return }
+                            isUpdatingCheers = true
+                            displayedVenue.isCheered.toggle()
+                            displayedVenue.cheersCount = max(0, displayedVenue.cheersCount + (displayedVenue.isCheered ? 1 : -1))
+                            Task {
+                                if let ratingID = displayedVenue.backendRatingID {
+                                    await backend.toggleCheers(for: ratingID)
+                                    if let refreshed = backend.cheersByRating[ratingID] {
+                                        displayedVenue.isCheered = refreshed.isCheered
+                                        displayedVenue.cheersCount = refreshed.count
+                                    }
+                                }
+                                isUpdatingCheers = false
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text("🍸")
+                                Text(displayedVenue.isCheered ? "Cheers’d" : "Cheers")
+                                if displayedVenue.cheersCount > 0 {
+                                    Text("\(displayedVenue.cheersCount)").monospacedDigit()
+                                }
+                                Spacer()
+                                if isUpdatingCheers { ProgressView().tint(displayedVenue.isCheered ? TinisColor.cream : TinisColor.forest) }
+                            }
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(displayedVenue.isCheered ? TinisColor.cream : TinisColor.forest)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(displayedVenue.isCheered ? TinisColor.forest : TinisColor.paleGold.opacity(0.42), in: RoundedRectangle(cornerRadius: 11))
+                        }
+                        .buttonStyle(.plain)
+                    }
 
-                    RatingOccasionSummary(venue: venue)
+                    MartiniBasicsSummary(venue: displayedVenue)
+
+                    RatingOccasionSummary(venue: displayedVenue)
 
                     InfoCard(title: "TASTING NOTES") {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: "quote.opening")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(TinisColor.gold)
-                            Text(venue.note.isEmpty ? "No notes added for this martini." : venue.note)
+                            Text(displayedVenue.note.isEmpty ? "No notes added for this martini." : displayedVenue.note)
                                 .font(.system(size: 14, design: .serif))
-                                .foregroundStyle(venue.note.isEmpty ? TinisColor.ink.opacity(0.48) : TinisColor.ink)
+                                .foregroundStyle(displayedVenue.note.isEmpty ? TinisColor.ink.opacity(0.48) : TinisColor.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
 
-                    TraitSummary(venue: venue)
+                    TraitSummary(venue: displayedVenue)
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("FRIEND RATINGS").font(.caption.bold()).tracking(1.2)
                         HStack(spacing: 17) {
-                            FriendScore(name: "You", score: venue.score, color: TinisColor.moss)
+                            FriendScore(name: displayedVenue.isOwnRating ? "You" : (displayedVenue.ratingOwnerName ?? "Friend"), score: displayedVenue.score, color: TinisColor.moss)
                             FriendScore(name: "Sarah", score: 9.2, color: .pink.opacity(0.7))
                             FriendScore(name: "Alex", score: 8.0, color: .purple.opacity(0.7))
                             FriendScore(name: "Maya", score: 8.6, color: .orange.opacity(0.7))
@@ -968,11 +1221,270 @@ struct VenueDetailView: View {
             }
             .background(TinisColor.cream)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if displayedVenue.isOwnRating {
+                        Button {
+                            isEditingRating = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(TinisColor.forest)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
                         .foregroundStyle(TinisColor.forest)
                 }
+            }
+            .sheet(isPresented: $isEditingRating) {
+                EditRatingView(venue: displayedVenue) { updatedVenue in
+                    displayedVenue = updatedVenue
+                    app.update(updatedVenue)
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+    }
+}
+
+struct EditRatingView: View {
+    @EnvironmentObject private var backend: TinisBackend
+    @Environment(\.dismiss) private var dismiss
+
+    let venue: MartiniVenue
+    let onSave: (MartiniVenue) -> Void
+
+    @State private var spirit: String
+    @State private var garnish: String
+    @State private var servingStyle: String
+    @State private var price: String
+    @State private var note: String
+    @State private var visitDate: Date
+    @State private var traits: [String: Double]
+    @State private var selectedCompanionIDs: Set<UUID> = []
+    @State private var didLoadCompanions = false
+    @State private var isSaving = false
+    @State private var saveError: String?
+
+    init(venue: MartiniVenue, onSave: @escaping (MartiniVenue) -> Void) {
+        self.venue = venue
+        self.onSave = onSave
+        _spirit = State(initialValue: venue.spirit)
+        _garnish = State(initialValue: venue.garnish)
+        _servingStyle = State(initialValue: venue.servingStyle)
+        _price = State(initialValue: venue.price.map { value in
+            value.rounded() == value ? String(Int(value)) : String(format: "%.2f", value)
+        } ?? "")
+        _note = State(initialValue: venue.note)
+        _visitDate = State(initialValue: Self.parseDate(venue.visitedAt) ?? Self.parseDisplayDate(venue.date) ?? Date())
+        _traits = State(initialValue: [
+            "Dirtiness": venue.dirtiness,
+            "Chilliness": venue.chilliness,
+            "Uniqueness": venue.uniqueness,
+            "Spirit-forward": venue.spiritForward
+        ])
+    }
+
+    private static func parseDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        return ISO8601DateFormatter().date(from: value)
+    }
+
+    private static func parseDisplayDate(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        for format in ["MMM d, yyyy", "MMMM d, yyyy"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) { return date }
+        }
+        return nil
+    }
+
+    private var selectedCompanionNames: [String] {
+        backend.clubFriends
+            .filter { selectedCompanionIDs.contains($0.id) }
+            .map(\.displayName)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                TinisColor.paper.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("EDIT YOUR RATING")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .tracking(1.2)
+                                .foregroundStyle(TinisColor.moss)
+                            Text(venue.name)
+                                .font(.system(size: 28, design: .serif))
+                                .foregroundStyle(TinisColor.ink)
+                            Text("Your score stays ELO-based; everything below can be refined.")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundStyle(TinisColor.ink.opacity(0.54))
+                        }
+
+                        InfoCard(title: "THE BASICS") {
+                            OptionPills(label: "Spirit", options: ["Gin", "Vodka", "Both", "Unknown"], selection: $spirit)
+                            OptionPills(label: "Garnish", options: ["Olive", "Lemon", "Onion", "Other"], selection: $garnish)
+                            OptionPills(label: "Serve", options: ["Up", "Rocks", "Other"], selection: $servingStyle)
+                            Divider()
+                            HStack {
+                                Text("Price").font(.system(size: 12, weight: .medium, design: .rounded))
+                                Spacer()
+                                Text("$").foregroundStyle(TinisColor.moss)
+                                TextField("19", text: $price)
+                                    .keyboardType(.decimalPad)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 64)
+                            }
+                            Divider()
+                            DatePicker("Date", selection: $visitDate, in: ...Date(), displayedComponents: .date)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("TRAITS")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .tracking(1.2)
+                                .foregroundStyle(TinisColor.moss)
+                            TraitEditorRow(title: "Dirtiness", low: "Clean", high: "Filthy", symbol: "olive", value: traitBinding("Dirtiness"))
+                            TraitEditorRow(title: "Chilliness", low: "Warm", high: "Arctic", symbol: "snowflake", value: traitBinding("Chilliness"))
+                            TraitEditorRow(title: "Uniqueness", low: "Classic", high: "Wild", symbol: "sparkles", value: traitBinding("Uniqueness"))
+                            TraitEditorRow(title: "Spirit-forward", low: "Smooth", high: "Rocket fuel", symbol: "martini", value: traitBinding("Spirit-forward"))
+                        }
+
+                        InfoCard(title: "TASTING NOTES") {
+                            TextField("What stood out?", text: $note, axis: .vertical)
+                                .lineLimit(3...6)
+                                .onChange(of: note) { _, newValue in
+                                    if newValue.count > 500 { note = String(newValue.prefix(500)) }
+                                }
+                            Text("\(note.count)/500")
+                                .font(.system(size: 9, design: .rounded))
+                                .foregroundStyle(TinisColor.ink.opacity(0.42))
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+
+                        if !backend.clubFriends.isEmpty {
+                            InfoCard(title: "WHO WERE YOU WITH?") {
+                                FlowLayout(spacing: 8) {
+                                    ForEach(backend.clubFriends) { friend in
+                                        let isSelected = selectedCompanionIDs.contains(friend.id)
+                                        Button {
+                                            if isSelected { selectedCompanionIDs.remove(friend.id) }
+                                            else { selectedCompanionIDs.insert(friend.id) }
+                                        } label: {
+                                            Label(friend.displayName, systemImage: isSelected ? "checkmark.circle.fill" : "person.crop.circle")
+                                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(isSelected ? TinisColor.cream : TinisColor.forest)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 8)
+                                                .background(isSelected ? TinisColor.forest : TinisColor.paleGold.opacity(0.28), in: Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+
+                        if let saveError {
+                            Text(saveError)
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundStyle(Color(hex: 0xA54F45))
+                        }
+
+                        Button {
+                            saveRating()
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isSaving { ProgressView().tint(TinisColor.cream) }
+                                Text(isSaving ? "Saving changes…" : "Save changes")
+                            }
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(TinisColor.cream)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(TinisColor.forest, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSaving)
+                    }
+                    .padding(20)
+                    .padding(.bottom, 20)
+                }
+            }
+            .navigationTitle("Edit rating")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(TinisColor.paper, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .preferredColorScheme(.light)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(TinisColor.forest)
+                }
+            }
+            .onAppear {
+                guard !didLoadCompanions else { return }
+                selectedCompanionIDs = Set(backend.clubFriends
+                    .filter { venue.companions.contains($0.displayName) }
+                    .map(\.id))
+                didLoadCompanions = true
+            }
+        }
+    }
+
+    private func traitBinding(_ key: String) -> Binding<Double> {
+        Binding(get: { traits[key] ?? 2 }, set: { traits[key] = $0 })
+    }
+
+    private func saveRating() {
+        guard !isSaving else { return }
+        isSaving = true
+        saveError = nil
+
+        var updated = venue
+        updated.spirit = spirit
+        updated.garnish = garnish
+        updated.servingStyle = servingStyle
+        updated.price = Double(price)
+        updated.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.dirtiness = traits["Dirtiness"] ?? 2
+        updated.chilliness = traits["Chilliness"] ?? 2
+        updated.uniqueness = traits["Uniqueness"] ?? 2
+        updated.spiritForward = traits["Spirit-forward"] ?? 2
+        updated.date = visitDate.formatted(date: .abbreviated, time: .omitted)
+        updated.visitedAt = ISO8601DateFormatter().string(from: visitDate)
+        updated.companions = selectedCompanionNames.isEmpty && backend.clubFriends.isEmpty
+            ? venue.companions
+            : selectedCompanionNames
+        updated.trait = "\(updated.chilliness >= 3 ? "very cold" : "soft"), \(updated.dirtiness >= 3 ? "dirty" : "clean")"
+
+        Task {
+            let didSave: Bool
+            if let ratingID = venue.backendRatingID {
+                didSave = await backend.updateRating(
+                    id: ratingID,
+                    venue: updated,
+                    visitDate: visitDate,
+                    companionIDs: Array(selectedCompanionIDs)
+                )
+            } else {
+                didSave = true
+            }
+
+            if didSave {
+                onSave(updated)
+                dismiss()
+            } else {
+                saveError = backend.errorMessage ?? "Your rating could not be updated."
+                isSaving = false
             }
         }
     }
@@ -1455,7 +1967,7 @@ struct BasicsStep: View {
                     .font(.system(size: 12, weight: .medium, design: .rounded))
             }
             .padding(15)
-            .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 13))
+            .background(TinisColor.softWhite.opacity(0.78), in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
             InfoCard(title: "TASTING NOTES · OPTIONAL") {
                 TextField("What stood out about this martini?", text: $note, axis: .vertical)
@@ -1610,7 +2122,7 @@ struct MartiniPhotoPicker: View {
                 #endif
             }
             Button("Choose from Library") {
-                isShowingPhotoLibrary = true
+                presentPhotoLibraryAfterDismissal()
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -1623,7 +2135,7 @@ struct MartiniPhotoPicker: View {
         }
         .alert("Camera isn’t available here", isPresented: $isShowingCameraUnavailable) {
             Button("Choose from Library") {
-                isShowingPhotoLibrary = true
+                presentPhotoLibraryAfterDismissal()
             }
             Button("OK", role: .cancel) {}
         } message: {
@@ -1661,6 +2173,12 @@ struct MartiniPhotoPicker: View {
             errorMessage = "That photo could not be prepared."
         }
         isLoading = false
+    }
+
+    private func presentPhotoLibraryAfterDismissal() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            isShowingPhotoLibrary = true
+        }
     }
 }
 
@@ -1819,7 +2337,7 @@ struct TraitEditorRow: View {
                 .tint(TinisColor.forest)
         }
         .padding(15)
-        .background(Color.white.opacity(0.48), in: RoundedRectangle(cornerRadius: 13))
+        .background(TinisColor.softWhite.opacity(0.74), in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
     }
 }
@@ -2147,11 +2665,12 @@ struct ProfileView: View {
                         }
                         .font(.system(size: 17, weight: .regular))
                         .foregroundStyle(TinisColor.cream)
-                        Circle()
-                            .fill(LinearGradient(colors: [Color(hex: 0xD75462), Color(hex: 0xD28B3B)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 88, height: 88)
-                            .overlay(Text(String(app.firstName.prefix(1))).font(.system(size: 36, design: .serif)).foregroundStyle(.white))
-                            .overlay(Circle().stroke(TinisColor.gold.opacity(0.65), lineWidth: 1.5))
+                        ProfileAvatarView(
+                            name: app.firstName,
+                            imageData: app.profilePhotoData,
+                            imageURL: backend.currentProfilePhotoURL,
+                            size: 88
+                        )
                             .shadow(color: .black.opacity(0.24), radius: 15, y: 6)
                         VStack(spacing: 3) {
                             Text(app.firstName).font(.system(size: 27, design: .serif))
@@ -2215,16 +2734,6 @@ struct ProfileView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 13))
                             .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.gold.opacity(0.28)))
                         }
-                        InfoCard(title: "YOUR IDEAL MARTINI") {
-                            HStack(alignment: .center, spacing: 14) {
-                                Text("Gin martini, very cold, lightly dirty, bone dry, up, olives.")
-                                    .font(.system(size: 18, design: .serif))
-                                Spacer(minLength: 0)
-                                Image(systemName: "wineglass")
-                                    .font(.system(size: 31, weight: .ultraLight))
-                                    .foregroundStyle(TinisColor.moss)
-                            }
-                        }
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 12)
@@ -2242,12 +2751,155 @@ struct ProfileView: View {
                 ProfileSettingsView()
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
+                    .presentationBackground(TinisColor.deepForest)
             }
             .sheet(isPresented: $isEditingProfile) {
                 EditProfileView()
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+                    .presentationBackground(TinisColor.paper)
             }
+        }
+    }
+}
+
+struct ProfilePhotoPicker: View {
+    @Binding var pendingPhotoData: Data?
+    let name: String
+    let existingPhotoData: Data?
+    let existingPhotoURL: URL?
+
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var isShowingPhotoSource = false
+    @State private var isShowingPhotoLibrary = false
+    @State private var isShowingCamera = false
+    @State private var isShowingCameraUnavailable = false
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    private var displayedPhotoData: Data? {
+        pendingPhotoData ?? existingPhotoData
+    }
+
+    private var hasPhoto: Bool {
+        displayedPhotoData != nil || existingPhotoURL != nil
+    }
+
+    var body: some View {
+        VStack(spacing: 9) {
+            Button {
+                isShowingPhotoSource = true
+            } label: {
+                ProfileAvatarView(
+                    name: name,
+                    imageData: displayedPhotoData,
+                    imageURL: existingPhotoURL,
+                    size: 96
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    ZStack {
+                        Circle().fill(TinisColor.forest)
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(TinisColor.cream)
+                    }
+                    .frame(width: 32, height: 32)
+                    .overlay(Circle().stroke(TinisColor.paper, lineWidth: 3))
+                }
+                .overlay {
+                    if isLoading {
+                        Circle()
+                            .fill(Color.black.opacity(0.42))
+                            .overlay(ProgressView().tint(.white))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(hasPhoto ? "Change profile photo" : "Add profile photo")
+
+            Text(hasPhoto ? "Change profile photo" : "Add profile photo")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(TinisColor.forest)
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(Color(hex: 0xA54F45))
+            }
+        }
+        .confirmationDialog(
+            hasPhoto ? "Change profile photo" : "Add profile photo",
+            isPresented: $isShowingPhotoSource,
+            titleVisibility: .visible
+        ) {
+            Button("Take Photo") {
+                #if targetEnvironment(simulator)
+                isShowingCameraUnavailable = true
+                #else
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    isShowingCamera = true
+                } else {
+                    isShowingCameraUnavailable = true
+                }
+                #endif
+            }
+            Button("Choose from Library") {
+                presentProfilePhotoLibraryAfterDismissal()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .photosPicker(isPresented: $isShowingPhotoLibrary, selection: $selectedItem, matching: .images)
+        .fullScreenCover(isPresented: $isShowingCamera) {
+            MartiniCameraPicker(isPresented: $isShowingCamera) { capturedImage in
+                preparePhoto(capturedImage)
+            }
+            .ignoresSafeArea()
+        }
+        .alert("Camera isn’t available here", isPresented: $isShowingCameraUnavailable) {
+            Button("Choose from Library") {
+                presentProfilePhotoLibraryAfterDismissal()
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The iOS Simulator doesn’t have a camera. Try this on your iPhone, or choose an existing photo here.")
+        }
+        .onChange(of: selectedItem) { _, newItem in
+            guard let newItem else { return }
+            isLoading = true
+            errorMessage = nil
+            Task {
+                do {
+                    guard
+                        let originalData = try await newItem.loadTransferable(type: Data.self),
+                        let originalImage = UIImage(data: originalData),
+                        let preparedData = originalImage.tinisUploadData(maxDimension: 1000, quality: 0.84)
+                    else {
+                        throw MartiniPhotoError.couldNotRead
+                    }
+                    pendingPhotoData = preparedData
+                } catch {
+                    selectedItem = nil
+                    errorMessage = "That photo could not be opened."
+                }
+                isLoading = false
+            }
+        }
+    }
+
+    private func preparePhoto(_ originalImage: UIImage) {
+        isLoading = true
+        errorMessage = nil
+        if let preparedData = originalImage.tinisUploadData(maxDimension: 1000, quality: 0.84) {
+            pendingPhotoData = preparedData
+        } else {
+            errorMessage = "That photo could not be prepared."
+        }
+        isLoading = false
+    }
+
+    private func presentProfilePhotoLibraryAfterDismissal() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            isShowingPhotoLibrary = true
         }
     }
 }
@@ -2258,6 +2910,7 @@ struct EditProfileView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var displayName = ""
+    @State private var pendingPhotoData: Data?
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var didLoad = false
@@ -2274,89 +2927,102 @@ struct EditProfileView: View {
         NavigationStack {
             ZStack {
                 TinisColor.paper.ignoresSafeArea()
-                VStack(spacing: 22) {
-                    Circle()
-                        .fill(LinearGradient(colors: [Color(hex: 0xD75462), Color(hex: 0xD28B3B)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 92, height: 92)
-                        .overlay(
-                            Text(String(trimmedName.prefix(1)).uppercased())
-                                .font(.system(size: 38, design: .serif))
-                                .foregroundStyle(.white)
+                ScrollView {
+                    VStack(spacing: 22) {
+                        ProfilePhotoPicker(
+                            pendingPhotoData: $pendingPhotoData,
+                            name: trimmedName.isEmpty ? app.firstName : trimmedName,
+                            existingPhotoData: app.profilePhotoData,
+                            existingPhotoURL: backend.currentProfilePhotoURL
                         )
-                        .overlay(Circle().stroke(TinisColor.gold.opacity(0.7), lineWidth: 1.5))
-                        .shadow(color: .black.opacity(0.14), radius: 16, y: 7)
+                        .shadow(color: .black.opacity(0.12), radius: 16, y: 7)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("DISPLAY NAME")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .tracking(1.2)
-                            .foregroundStyle(TinisColor.moss)
-                        TextField("Your name", text: $displayName)
-                            .font(.system(size: 17, design: .rounded))
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled()
-                            .padding(14)
-                            .background(.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(TinisColor.line))
-                            .onChange(of: displayName) { _, newValue in
-                                if newValue.count > 40 {
-                                    displayName = String(newValue.prefix(40))
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("DISPLAY NAME")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .tracking(1.2)
+                                .foregroundStyle(TinisColor.moss)
+                            TextField("Your name", text: $displayName)
+                                .font(.system(size: 17, design: .rounded))
+                                .foregroundStyle(TinisColor.ink)
+                                .tint(TinisColor.forest)
+                                .textInputAutocapitalization(.words)
+                                .autocorrectionDisabled()
+                                .padding(14)
+                                .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(TinisColor.line))
+                                .onChange(of: displayName) { _, newValue in
+                                    if newValue.count > 40 {
+                                        displayName = String(newValue.prefix(40))
+                                    }
+                                }
+                            HStack {
+                                Text("This is how your friends see you.")
+                                Spacer()
+                                Text("\(displayName.count)/40")
+                            }
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundStyle(TinisColor.ink.opacity(0.5))
+                        }
+
+                        if let saveError {
+                            Text(saveError)
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundStyle(Color(hex: 0xA54F45))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Button {
+                            isSaving = true
+                            saveError = nil
+                            Task {
+                                let didSaveName = await backend.updateDisplayName(trimmedName)
+                                let didSavePhoto: Bool
+                                if didSaveName, let pendingPhotoData {
+                                    didSavePhoto = await backend.updateProfilePhoto(pendingPhotoData)
+                                } else {
+                                    didSavePhoto = didSaveName
+                                }
+
+                                if didSaveName && didSavePhoto {
+                                    app.firstName = trimmedName
+                                    if let pendingPhotoData {
+                                        app.profilePhotoData = pendingPhotoData
+                                    }
+                                    dismiss()
+                                } else {
+                                    saveError = backend.errorMessage ?? "Your profile could not be updated."
+                                    isSaving = false
                                 }
                             }
-                        HStack {
-                            Text("This is how your friends see you.")
-                            Spacer()
-                            Text("\(displayName.count)/40")
-                        }
-                        .font(.system(size: 10, design: .rounded))
-                        .foregroundStyle(TinisColor.ink.opacity(0.48))
-                    }
-
-                    if let saveError {
-                        Text(saveError)
-                            .font(.system(size: 12, design: .rounded))
-                            .foregroundStyle(Color(hex: 0xA54F45))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Button {
-                        isSaving = true
-                        saveError = nil
-                        Task {
-                            let didSave = await backend.updateDisplayName(trimmedName)
-                            if didSave {
-                                app.firstName = trimmedName
-                                dismiss()
-                            } else {
-                                saveError = backend.errorMessage ?? "Your profile could not be updated."
-                                isSaving = false
+                        } label: {
+                            HStack(spacing: 9) {
+                                if isSaving { ProgressView().tint(TinisColor.cream) }
+                                Text(isSaving ? "Saving…" : "Save profile")
                             }
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(TinisColor.cream)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(canSave ? TinisColor.forest : TinisColor.forest.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
                         }
-                    } label: {
-                        HStack(spacing: 9) {
-                            if isSaving { ProgressView().tint(TinisColor.cream) }
-                            Text(isSaving ? "Saving…" : "Save profile")
-                        }
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(TinisColor.cream)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(canSave ? TinisColor.forest : TinisColor.forest.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+                        .buttonStyle(.plain)
+                        .disabled(!canSave)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!canSave)
-                    Spacer()
+                    .padding(22)
                 }
-                .padding(22)
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Edit profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(TinisColor.paper, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.light, for: .navigationBar)
+            .preferredColorScheme(.light)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(TinisColor.forest)
                 }
             }
             .onAppear {
@@ -2384,7 +3050,7 @@ struct ProfileSettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                TinisColor.paper.ignoresSafeArea()
+                TinisColor.deepForest.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 18) {
                         SettingsPanel(title: "YOUR CLUB") {
@@ -2466,7 +3132,7 @@ struct ProfileSettingsView: View {
                                 .foregroundStyle(Color(hex: 0xA54F45))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
-                                .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+                                .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 12))
                                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: 0xA54F45).opacity(0.28)))
                         }
                         .buttonStyle(.plain)
@@ -2476,9 +3142,9 @@ struct ProfileSettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(TinisColor.paper, for: .navigationBar)
+            .toolbarBackground(TinisColor.deepForest, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -2508,11 +3174,11 @@ struct SettingsPanel<Content: View>: View {
             Text(title)
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .tracking(1.2)
-                .foregroundStyle(TinisColor.moss)
+                .foregroundStyle(TinisColor.gold)
             VStack(spacing: 12) { content }
                 .foregroundStyle(TinisColor.ink)
                 .padding(15)
-                .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
+                .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(TinisColor.line.opacity(0.9)))
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -21,10 +21,12 @@ struct TinisMembershipRow: Decodable {
 struct TinisClubFriend: Decodable, Equatable, Identifiable {
     let id: UUID
     let displayName: String
+    var avatarPath: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
+        case avatarPath = "avatar_path"
     }
 }
 
@@ -33,6 +35,7 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
     let clubID: UUID
     let userID: UUID
     let displayName: String
+    let avatarPath: String?
     let venueID: UUID
     let venueName: String
     let city: String
@@ -44,6 +47,14 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
     let spiritForward: Double?
     let publicNote: String?
     let photoPath: String?
+    let spirit: String?
+    let garnish: String?
+    let servingStyle: String?
+    let price: Double?
+    let companions: [String]?
+    let visitedAt: String?
+    let cheersCount: Int?
+    let cheeredByMe: Bool?
     let createdAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -51,12 +62,17 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
         case clubID = "club_id"
         case userID = "user_id"
         case displayName = "display_name"
+        case avatarPath = "avatar_path"
         case venueID = "venue_id"
         case venueName = "venue_name"
-        case city, region, score, dirtiness, chilliness, uniqueness
+        case city, region, score, dirtiness, chilliness, uniqueness, spirit, garnish, price, companions
         case spiritForward = "spirit_forward"
+        case servingStyle = "serving_style"
         case publicNote = "public_note"
         case photoPath = "photo_path"
+        case visitedAt = "visited_at"
+        case cheersCount = "cheers_count"
+        case cheeredByMe = "cheered_by_me"
         case createdAt = "created_at"
     }
 }
@@ -79,6 +95,9 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
     let price: Double?
     let publicNote: String?
     let companions: [String]?
+    let ratingID: UUID?
+    let ratingUserID: UUID?
+    let isOwnRating: Bool?
     let latestVisit: String
 
     var id: UUID { venueID }
@@ -93,8 +112,16 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
         case spirit, garnish, price, companions
         case servingStyle = "serving_style"
         case publicNote = "public_note"
+        case ratingID = "detail_rating_id"
+        case ratingUserID = "detail_user_id"
+        case isOwnRating = "is_own_rating"
         case latestVisit = "latest_visit"
     }
+}
+
+struct TinisCheersState: Equatable {
+    var count: Int
+    var isCheered: Bool
 }
 
 private struct SaveRatingParameters: Encodable {
@@ -175,11 +202,50 @@ private struct RatingCompanionInsert: Encodable {
     }
 }
 
+private struct RatingEditUpdate: Encodable {
+    let dirtiness: Double
+    let chilliness: Double
+    let uniqueness: Double
+    let spiritForward: Double
+    let spirit: String
+    let garnish: String
+    let servingStyle: String
+    let price: Double?
+    let publicNote: String?
+    let visitedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case dirtiness, chilliness, uniqueness, spirit, garnish, price
+        case spiritForward = "spirit_forward"
+        case servingStyle = "serving_style"
+        case publicNote = "public_note"
+        case visitedAt = "visited_at"
+    }
+}
+
+private struct RatingCheerInsert: Encodable {
+    let ratingID: UUID
+    let userID: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case ratingID = "rating_id"
+        case userID = "user_id"
+    }
+}
+
 private struct ProfileUpdate: Encodable {
     let displayName: String
 
     enum CodingKeys: String, CodingKey {
         case displayName = "display_name"
+    }
+}
+
+private struct ProfileAvatarUpdate: Encodable {
+    let avatarPath: String
+
+    enum CodingKeys: String, CodingKey {
+        case avatarPath = "avatar_path"
     }
 }
 
@@ -189,15 +255,23 @@ final class TinisBackend: ObservableObject {
     @Published private(set) var friendFeed: [TinisFriendFeedRow] = []
     @Published private(set) var leaderboard: [TinisLeaderboardRow] = []
     @Published private(set) var clubFriends: [TinisClubFriend] = []
+    @Published private(set) var currentUserID: UUID?
     @Published private(set) var currentDisplayName: String?
+    @Published private(set) var avatarURLs: [UUID: URL] = [:]
+    @Published private(set) var cheersByRating: [UUID: TinisCheersState] = [:]
     @Published private(set) var photoURLs: [UUID: URL] = [:]
     @Published var errorMessage: String?
 
     private let client: SupabaseClient?
     private(set) var clubID: UUID?
+    private var currentAvatarPath: String?
 
     var isConfigured: Bool { client != nil }
     var isReady: Bool { phase == .ready && clubID != nil }
+    var currentProfilePhotoURL: URL? {
+        guard let currentUserID else { return nil }
+        return avatarURLs[currentUserID]
+    }
 
     init(bundle: Bundle = .main) {
 #if DEBUG
@@ -302,6 +376,56 @@ final class TinisBackend: ObservableObject {
         }
     }
 
+    func updateProfilePhoto(_ photoData: Data) async -> Bool {
+        guard let client else { return true }
+
+        errorMessage = nil
+        do {
+            let userID = try await client.auth.session.user.id
+            let photoPath = [
+                userID.uuidString.lowercased(),
+                "\(UUID().uuidString.lowercased()).jpg"
+            ].joined(separator: "/")
+
+            try await client.storage
+                .from("profile-photos")
+                .upload(
+                    photoPath,
+                    data: photoData,
+                    options: FileOptions(contentType: "image/jpeg")
+                )
+
+            do {
+                try await client
+                    .from("profiles")
+                    .update(ProfileAvatarUpdate(avatarPath: photoPath))
+                    .eq("id", value: userID)
+                    .execute()
+            } catch {
+                _ = try? await client.storage
+                    .from("profile-photos")
+                    .remove(paths: [photoPath])
+                throw error
+            }
+
+            if let oldAvatarPath = currentAvatarPath, oldAvatarPath != photoPath {
+                _ = try? await client.storage
+                    .from("profile-photos")
+                    .remove(paths: [oldAvatarPath])
+            }
+
+            currentAvatarPath = photoPath
+            avatarURLs[userID] = try? await client.storage
+                .from("profile-photos")
+                .createSignedURL(path: photoPath, expiresIn: 60 * 60)
+            await refreshSharedData()
+            return true
+        } catch {
+            errorMessage = "Your profile photo could not be uploaded. Please try again."
+            return false
+        }
+    }
+
     func signOut() async {
         if let client {
             try? await client.auth.signOut()
@@ -310,7 +434,11 @@ final class TinisBackend: ObservableObject {
         friendFeed = []
         leaderboard = []
         clubFriends = []
+        currentUserID = nil
         currentDisplayName = nil
+        currentAvatarPath = nil
+        avatarURLs = [:]
+        cheersByRating = [:]
         photoURLs = [:]
         errorMessage = nil
         phase = .signedOut
@@ -458,9 +586,97 @@ final class TinisBackend: ObservableObject {
         return "Your rating was saved, but \(saveIssues.joined(separator: ", ")) could not be added. You can try again later."
     }
 
+    func updateRating(
+        id ratingID: UUID,
+        venue: MartiniVenue,
+        visitDate: Date,
+        companionIDs: [UUID]
+    ) async -> Bool {
+        guard let client else { return true }
+
+        errorMessage = nil
+        let trimmedNote = venue.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await client
+                .from("ratings")
+                .update(RatingEditUpdate(
+                    dirtiness: venue.dirtiness,
+                    chilliness: venue.chilliness,
+                    uniqueness: venue.uniqueness,
+                    spiritForward: venue.spiritForward,
+                    spirit: venue.spirit.lowercased(),
+                    garnish: venue.garnish.lowercased(),
+                    servingStyle: venue.servingStyle.lowercased(),
+                    price: venue.price,
+                    publicNote: trimmedNote.isEmpty ? nil : trimmedNote,
+                    visitedAt: ISO8601DateFormatter().string(from: visitDate)
+                ))
+                .eq("id", value: ratingID)
+                .execute()
+
+            try await client
+                .from("rating_companions")
+                .delete()
+                .eq("rating_id", value: ratingID)
+                .execute()
+
+            if !companionIDs.isEmpty {
+                try await client
+                    .from("rating_companions")
+                    .insert(companionIDs.map { RatingCompanionInsert(ratingID: ratingID, companionID: $0) })
+                    .execute()
+            }
+
+            await refreshSharedData()
+            return true
+        } catch {
+            errorMessage = "Your rating could not be updated. Please try again."
+            return false
+        }
+    }
+
+    func toggleCheers(for ratingID: UUID) async {
+        guard let client else { return }
+        let resolvedUserID: UUID?
+        if let currentUserID {
+            resolvedUserID = currentUserID
+        } else {
+            resolvedUserID = try? await client.auth.session.user.id
+        }
+        guard let userID = resolvedUserID else { return }
+
+        let previous = cheersByRating[ratingID] ?? TinisCheersState(count: 0, isCheered: false)
+        cheersByRating[ratingID] = TinisCheersState(
+            count: max(0, previous.count + (previous.isCheered ? -1 : 1)),
+            isCheered: !previous.isCheered
+        )
+
+        do {
+            if previous.isCheered {
+                try await client
+                    .from("rating_cheers")
+                    .delete()
+                    .eq("rating_id", value: ratingID)
+                    .eq("user_id", value: userID)
+                    .execute()
+            } else {
+                try await client
+                    .from("rating_cheers")
+                    .insert(RatingCheerInsert(ratingID: ratingID, userID: userID))
+                    .execute()
+            }
+            await refreshSharedData()
+        } catch {
+            cheersByRating[ratingID] = previous
+            errorMessage = "Your cheers could not be saved. Please try again."
+        }
+    }
+
     func refreshSharedData() async {
         guard let client, clubID != nil else { return }
         do {
+            let signedInUserID = try? await client.auth.session.user.id
+            currentUserID = signedInUserID
             async let feedRequest: [TinisFriendFeedRow] = client
                 .from("friend_feed")
                 .select()
@@ -486,15 +702,28 @@ final class TinisBackend: ObservableObject {
             friendFeed = newFeed
             leaderboard = newLeaderboard
             photoURLs = newPhotoURLs
+            cheersByRating = Dictionary(uniqueKeysWithValues: newFeed.map {
+                ($0.id, TinisCheersState(count: $0.cheersCount ?? 0, isCheered: $0.cheeredByMe ?? false))
+            })
 
-            if let currentUserID = try? await client.auth.session.user.id,
+            if let currentUserID = signedInUserID,
                let profiles: [TinisClubFriend] = try? await client
                 .from("profiles")
-                .select("id, display_name")
+                .select("id, display_name, avatar_path")
                 .order("display_name")
                 .execute()
                 .value {
-                currentDisplayName = profiles.first(where: { $0.id == currentUserID })?.displayName
+                var newAvatarURLs: [UUID: URL] = [:]
+                for profile in profiles {
+                    guard let avatarPath = profile.avatarPath else { continue }
+                    newAvatarURLs[profile.id] = try? await client.storage
+                        .from("profile-photos")
+                        .createSignedURL(path: avatarPath, expiresIn: 60 * 60)
+                }
+                let currentProfile = profiles.first(where: { $0.id == currentUserID })
+                currentDisplayName = currentProfile?.displayName
+                currentAvatarPath = currentProfile?.avatarPath
+                avatarURLs = newAvatarURLs
                 clubFriends = profiles.filter { $0.id != currentUserID }
             }
         } catch {

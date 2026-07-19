@@ -30,6 +30,12 @@ let gold = NSColor(calibratedRed: 0.788, green: 0.682, blue: 0.447, alpha: 1)
 let moss = NSColor(calibratedRed: 0.443, green: 0.506, blue: 0.333, alpha: 1)
 let cream = NSColor(calibratedRed: 0.973, green: 0.953, blue: 0.925, alpha: 1)
 
+let markScale: CGFloat = 1.25
+context.saveGState()
+context.translateBy(x: 512, y: 512)
+context.scaleBy(x: markScale, y: markScale)
+context.translateBy(x: -512, y: -512)
+
 context.saveGState()
 context.setShadow(offset: .zero, blur: 34, color: gold.withAlphaComponent(0.22).cgColor)
 context.setStrokeColor(gold.cgColor)
@@ -49,6 +55,7 @@ context.translateBy(x: 612, y: 632)
 context.rotate(by: -.pi * 38 / 180)
 context.setFillColor(gold.cgColor)
 context.fill(CGRect(x: -10, y: -225, width: 20, height: 450))
+context.restoreGState()
 context.restoreGState()
 
 guard

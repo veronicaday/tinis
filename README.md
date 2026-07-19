@@ -1,6 +1,6 @@
 # tini’s
 
-A private SwiftUI martini-rating club for Veronica and friends.
+Beli for matinia
 
 ## Open it
 

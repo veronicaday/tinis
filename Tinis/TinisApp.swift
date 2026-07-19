@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import MapKit
 
 @main
 struct TinisApp: App {
@@ -1179,11 +1180,211 @@ struct ScoreBadge: View {
 
 // MARK: - Search and Detail
 
+private enum SearchDisplayMode: String, CaseIterable, Identifiable {
+    case list = "List"
+    case map = "Map"
+
+    var id: String { rawValue }
+
+    var systemImage: String {
+        switch self {
+        case .list: return "list.bullet"
+        case .map: return "map"
+        }
+    }
+}
+
+private struct ClubVenueMapPin: Identifiable {
+    let venue: MartiniVenue
+    let coordinate: CLLocationCoordinate2D
+
+    var id: UUID { venue.id }
+}
+
+private struct ClubRatingsMapView: View {
+    let venues: [MartiniVenue]
+    let openVenue: (MartiniVenue) -> Void
+
+    @State private var selectedCity: String
+    @State private var pinsByVenueID: [UUID: ClubVenueMapPin] = [:]
+    @State private var isLoading = false
+    @State private var cameraPosition: MapCameraPosition = .automatic
+
+    init(venues: [MartiniVenue], openVenue: @escaping (MartiniVenue) -> Void) {
+        self.venues = venues
+        self.openVenue = openVenue
+        _selectedCity = State(initialValue: Self.cityName(for: venues.first) ?? "All cities")
+    }
+
+    private var cities: [String] {
+        Array(Set(venues.compactMap(Self.cityName(for:)))).sorted()
+    }
+
+    private var visibleVenues: [MartiniVenue] {
+        guard selectedCity != "All cities" else { return venues }
+        return venues.filter { Self.cityName(for: $0) == selectedCity }
+    }
+
+    private var visiblePins: [ClubVenueMapPin] {
+        visibleVenues.compactMap { pinsByVenueID[$0.id] }
+    }
+
+    private var loadKey: String {
+        visibleVenues
+            .map { "\($0.id.uuidString)|\($0.fullAddress ?? "")|\($0.location)" }
+            .joined(separator: ";")
+    }
+
+    var body: some View {
+        VStack(spacing: 11) {
+            HStack {
+                Picker("City", selection: $selectedCity) {
+                    if cities.count > 1 {
+                        Text("All cities").tag("All cities")
+                    }
+                    ForEach(cities, id: \.self) { city in
+                        Text(city).tag(city)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(TinisColor.forest)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+
+                Spacer()
+
+                Text("\(visibleVenues.count) \(visibleVenues.count == 1 ? "spot" : "spots")")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(TinisColor.ink.opacity(0.52))
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 11))
+            .overlay(RoundedRectangle(cornerRadius: 11).stroke(TinisColor.gold.opacity(0.28)))
+
+            ZStack {
+                Map(position: $cameraPosition) {
+                    ForEach(visiblePins) { pin in
+                        Annotation(pin.venue.name, coordinate: pin.coordinate, anchor: .bottom) {
+                            Button {
+                                openVenue(pin.venue)
+                            } label: {
+                                VStack(spacing: 2) {
+                                    Text("🍸")
+                                        .font(.system(size: 14))
+                                    Text(pin.venue.score, format: .number.precision(.fractionLength(1)))
+                                        .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                                        .foregroundStyle(TinisColor.forest)
+                                }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(TinisColor.softWhite, in: Capsule())
+                                .overlay(Capsule().stroke(TinisColor.gold, lineWidth: 1.5))
+                                .shadow(color: TinisColor.darkestForest.opacity(0.18), radius: 5, y: 3)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(pin.venue.name), rated \(pin.venue.score, specifier: "%.1f")")
+                            .accessibilityHint("Opens your club’s ratings")
+                        }
+                    }
+                }
+                .mapStyle(.standard)
+                .tint(TinisColor.forest)
+
+                if isLoading && visiblePins.isEmpty {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                            .tint(TinisColor.forest)
+                        Text("Putting your pours on the map…")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(TinisColor.ink.opacity(0.58))
+                    }
+                    .padding(16)
+                    .background(TinisColor.softWhite.opacity(0.94), in: RoundedRectangle(cornerRadius: 12))
+                } else if !isLoading && visiblePins.isEmpty {
+                    VStack(spacing: 9) {
+                        Image(systemName: "mappin.slash")
+                            .font(.system(size: 22))
+                            .foregroundStyle(TinisColor.moss)
+                        Text("No mappable spots yet")
+                            .font(.system(size: 17, design: .serif))
+                        Text("New ratings saved from Google Places will appear here.")
+                            .font(.system(size: 10, design: .rounded))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(TinisColor.ink.opacity(0.56))
+                    }
+                    .padding(17)
+                    .background(TinisColor.softWhite.opacity(0.94), in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(TinisColor.gold.opacity(0.35)))
+        }
+        .task(id: loadKey) {
+            await loadPins()
+        }
+        .onChange(of: selectedCity) { _, _ in
+            cameraPosition = .automatic
+        }
+    }
+
+    private func loadPins() async {
+        guard !visibleVenues.isEmpty else {
+            isLoading = false
+            return
+        }
+
+        isLoading = true
+        for venue in visibleVenues where pinsByVenueID[venue.id] == nil {
+            guard !Task.isCancelled else { return }
+            let coordinate: CLLocationCoordinate2D?
+            if let demoCoordinate = Self.demoCoordinate(for: venue) {
+                coordinate = demoCoordinate
+            } else {
+                coordinate = await geocode(venue)
+            }
+            if let coordinate {
+                pinsByVenueID[venue.id] = ClubVenueMapPin(venue: venue, coordinate: coordinate)
+                cameraPosition = .automatic
+            }
+        }
+        isLoading = false
+        cameraPosition = .automatic
+    }
+
+    private func geocode(_ venue: MartiniVenue) async -> CLLocationCoordinate2D? {
+        let address = venue.fullAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = address?.isEmpty == false ? address! : "\(venue.name), \(venue.location)"
+        let placemarks = try? await CLGeocoder().geocodeAddressString(query)
+        return placemarks?.first?.location?.coordinate
+    }
+
+    private static func cityName(for venue: MartiniVenue?) -> String? {
+        guard let venue else { return nil }
+        return venue.location
+            .split(separator: ",", maxSplits: 1)
+            .first
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func demoCoordinate(for venue: MartiniVenue) -> CLLocationCoordinate2D? {
+        switch venue.name.lowercased() {
+        case "bemelmans bar": return CLLocationCoordinate2D(latitude: 40.7744, longitude: -73.9633)
+        case "dante": return CLLocationCoordinate2D(latitude: 40.7287, longitude: -74.0017)
+        case "employees only": return CLLocationCoordinate2D(latitude: 40.7336, longitude: -74.0060)
+        case "clover club": return CLLocationCoordinate2D(latitude: 40.6846, longitude: -73.9957)
+        case "the savoy": return CLLocationCoordinate2D(latitude: 51.5102, longitude: -0.1209)
+        default: return nil
+        }
+    }
+}
+
 struct SearchView: View {
     @EnvironmentObject private var app: TinisStore
     @State private var isShowingPlaceSearch = false
     @State private var searchNotice: String?
     @State private var selectedPlace: GooglePlaceSelection?
+    @State private var displayMode: SearchDisplayMode = .list
 
     var body: some View {
         ZStack {
@@ -1232,40 +1433,48 @@ struct SearchView: View {
                         .foregroundStyle(TinisColor.gold)
                 }
 
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(Array(app.venues.enumerated()), id: \.element.id) { index, venue in
-                            Button {
-                                selectedPlace = GooglePlaceSelection(
-                                    placeID: venue.googlePlaceID,
-                                    name: venue.name,
-                                    location: venue.location,
-                                    fullAddress: venue.fullAddress
-                                )
-                            } label: {
-                                HStack(spacing: 12) {
-                                    VenueThumbnail(index: index + 1)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(venue.name)
-                                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                        Label(venue.location, systemImage: "mappin")
-                                            .font(.system(size: 11, design: .rounded))
-                                            .foregroundStyle(TinisColor.ink.opacity(0.52))
-                                        Text(venue.trait.capitalized)
-                                            .font(.system(size: 10, design: .rounded))
-                                            .foregroundStyle(TinisColor.moss)
+                Picker("View", selection: $displayMode) {
+                    ForEach(SearchDisplayMode.allCases) { mode in
+                        Label(mode.rawValue, systemImage: mode.systemImage).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .colorScheme(.dark)
+                .accessibilityLabel("Ratings view")
+
+                if displayMode == .list {
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(Array(app.venues.enumerated()), id: \.element.id) { index, venue in
+                                Button {
+                                    open(venue)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        VenueThumbnail(index: index + 1)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(venue.name)
+                                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                            Label(venue.location, systemImage: "mappin")
+                                                .font(.system(size: 11, design: .rounded))
+                                                .foregroundStyle(TinisColor.ink.opacity(0.52))
+                                            Text(venue.trait.capitalized)
+                                                .font(.system(size: 10, design: .rounded))
+                                                .foregroundStyle(TinisColor.moss)
+                                        }
+                                        Spacer()
+                                        ScoreBadge(score: venue.score)
                                     }
-                                    Spacer()
-                                    ScoreBadge(score: venue.score)
+                                    .foregroundStyle(TinisColor.ink)
+                                    .padding(11)
+                                    .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 13))
+                                    .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.gold.opacity(0.25)))
                                 }
-                                .foregroundStyle(TinisColor.ink)
-                                .padding(11)
-                                .background(TinisColor.cream, in: RoundedRectangle(cornerRadius: 13))
-                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.gold.opacity(0.25)))
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
+                } else {
+                    ClubRatingsMapView(venues: app.venues, openVenue: open)
                 }
             }
             .padding(.horizontal, 18)
@@ -1293,6 +1502,15 @@ struct SearchView: View {
         } message: {
             Text(searchNotice ?? "")
         }
+    }
+
+    private func open(_ venue: MartiniVenue) {
+        selectedPlace = GooglePlaceSelection(
+            placeID: venue.googlePlaceID,
+            name: venue.name,
+            location: venue.location,
+            fullAddress: venue.fullAddress
+        )
     }
 }
 

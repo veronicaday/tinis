@@ -1,6 +1,6 @@
 # tini’s
 
-Beli for matinia
+Beli but for martinis
 
 ## Open it
 

@@ -125,9 +125,9 @@ enum MartiniType: String, Codable, CaseIterable, Identifiable {
 }
 
 enum MartiniTypeScope: String, CaseIterable, Identifiable {
-    case all = "All"
     case classic = "Classic"
     case espresso = "Espresso"
+    case all = "All"
 
     var id: String { rawValue }
 
@@ -2891,7 +2891,7 @@ struct AddMartiniView: View {
                         if let martiniType = selectedMartiniType {
                             ProgressLine(stage: stage, accent: martiniType.accentColor)
                         } else {
-                            MartiniTypeSelectionStep { chooseMartiniType($0) }
+                            MartiniTypeSelectionStep(isActive: app.selectedTab == 2) { chooseMartiniType($0) }
                         }
                         if stage == 0, let martiniType = selectedMartiniType {
                             BasicsStep(
@@ -3225,6 +3225,7 @@ struct ProgressLine: View {
 }
 
 struct MartiniTypeSelectionStep: View {
+    let isActive: Bool
     let onSelect: (MartiniType) -> Void
 
     var body: some View {
@@ -3241,40 +3242,189 @@ struct MartiniTypeSelectionStep: View {
                     .font(.system(size: 13, design: .rounded))
                     .foregroundStyle(TinisColor.ink.opacity(0.58))
             }
-            ForEach(MartiniType.allCases) { type in
-                Button { onSelect(type) } label: {
-                    ZStack(alignment: .bottomLeading) {
-                        LinearGradient(
-                            colors: [type.deepColor, type.accentColor],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(type.symbol).font(.system(size: 36))
-                                Spacer()
-                                Image(systemName: "arrow.up.right")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(TinisColor.gold)
-                            }
-                            Spacer()
-                            Text(type.title)
-                                .font(.system(size: 28, design: .serif))
-                                .foregroundStyle(TinisColor.cream)
-                            Text(type.subtitle)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(TinisColor.cream.opacity(0.72))
-                        }
-                        .padding(20)
-                    }
-                    .frame(height: 190)
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(TinisColor.gold.opacity(0.38)))
-                    .shadow(color: type.deepColor.opacity(0.18), radius: 14, y: 7)
+
+            ClinkingMartiniChooser(isActive: isActive, onSelect: onSelect)
+                .frame(maxWidth: .infinity)
+                .frame(height: 410)
+        }
+    }
+}
+
+private struct ClinkingMartiniChooser: View {
+    private enum ClinkPhase {
+        case waiting
+        case approach
+        case contact
+        case recoil
+        case settled
+    }
+
+    let isActive: Bool
+    let onSelect: (MartiniType) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: ClinkPhase = .waiting
+    @State private var showSparkle = false
+
+    private var hasSettled: Bool { phase == .settled }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [TinisColor.softWhite.opacity(0.9), TinisColor.paleGold.opacity(0.22)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            GeometryReader { geometry in
+                let choiceWidth = (geometry.size.width - 8) / 2
+                HStack(spacing: 0) {
+                    pourChoice(.classic)
+                        .frame(width: choiceWidth)
+                    pourChoice(.espresso)
+                        .frame(width: choiceWidth)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 4)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+            }
+
+            ZStack {
+                Circle()
+                    .stroke(TinisColor.gold.opacity(0.55), lineWidth: 1.2)
+                    .frame(width: 62, height: 62)
+                    .scaleEffect(showSparkle ? 1.35 : 0.35)
+                    .opacity(showSparkle ? 0.08 : 0)
+                Circle()
+                    .fill(TinisColor.gold.opacity(0.12))
+                    .frame(width: 86, height: 86)
+                    .scaleEffect(showSparkle ? 1 : 0.45)
+                    .opacity(showSparkle ? 1 : 0)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 30, weight: .medium))
+                Image(systemName: "sparkle")
+                    .font(.system(size: 13, weight: .bold))
+                    .offset(x: 25, y: -18)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 10, weight: .bold))
+                    .offset(x: -23, y: 21)
+            }
+            .foregroundStyle(TinisColor.gold)
+            .scaleEffect(showSparkle ? 1 : 0.15)
+            .opacity(showSparkle ? 1 : 0)
+            .offset(y: -105)
+
+            HStack(spacing: 82) {
+                Image(systemName: "chevron.compact.right")
+                Image(systemName: "chevron.compact.left")
+            }
+            .font(.system(size: 16, weight: .ultraLight))
+            .foregroundStyle(TinisColor.gold.opacity(0.5))
+            .opacity(phase == .approach ? 1 : 0)
+            .scaleEffect(phase == .approach ? 1 : 0.72)
+            .offset(y: -103)
+
+            Text("Tap a glass to start")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .tracking(0.5)
+                .foregroundStyle(TinisColor.ink.opacity(0.5))
+                .opacity(hasSettled ? 1 : 0)
+                .offset(y: 174)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(TinisColor.gold.opacity(0.38)))
+        .shadow(color: TinisColor.gold.opacity(0.1), radius: 18, y: 8)
+        .sensoryFeedback(.impact(weight: .light), trigger: showSparkle)
+        .task(id: isActive) {
+            guard isActive else { return }
+            withAnimation(.none) {
+                phase = .waiting
+                showSparkle = false
+            }
+
+            if reduceMotion {
+                do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+                withAnimation(.easeOut(duration: 0.22)) { phase = .settled }
+                return
+            }
+
+            do { try await Task.sleep(for: .milliseconds(280)) } catch { return }
+            withAnimation(.easeInOut(duration: 0.24)) {
+                phase = .approach
+            }
+            do { try await Task.sleep(for: .milliseconds(230)) } catch { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                phase = .contact
+                showSparkle = true
+            }
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.58)) {
+                phase = .recoil
+                showSparkle = false
+            }
+            do { try await Task.sleep(for: .milliseconds(190)) } catch { return }
+            withAnimation(.spring(response: 0.52, dampingFraction: 0.76)) {
+                phase = .settled
             }
         }
+    }
+
+    private func pourChoice(_ type: MartiniType) -> some View {
+        let isClassic = type == .classic
+        let direction = isClassic ? 1.0 : -1.0
+        let transform: (rotation: Double, scale: CGFloat, x: CGFloat, y: CGFloat) = {
+            switch phase {
+            case .waiting:
+                return (-8 * direction, 0.94, -4 * direction, 9)
+            case .approach:
+                return (1.5 * direction, 0.99, 0, 1)
+            case .contact:
+                return (4.5 * direction, 1.025, 0, -7)
+            case .recoil:
+                return (-2 * direction, 0.985, -2 * direction, 3)
+            case .settled:
+                return (0, 1, 0, 0)
+            }
+        }()
+
+        return Button {
+            onSelect(type)
+        } label: {
+            VStack(spacing: 13) {
+                Image(isClassic ? "ClassicMartiniCutout" : "EspressoMartiniCutout")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: isClassic ? 220 : 202, height: 258)
+                    .rotationEffect(.degrees(transform.rotation), anchor: .bottom)
+                    .scaleEffect(transform.scale)
+                    .offset(x: transform.x, y: transform.y)
+
+                VStack(spacing: 4) {
+                    Text(type.shortTitle)
+                        .font(.system(size: 23, design: .serif))
+                        .foregroundStyle(type.accentColor)
+                    Text("MARTINI")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .tracking(1.4)
+                        .foregroundStyle(TinisColor.ink.opacity(0.48))
+                }
+                .opacity(hasSettled ? 1 : 0)
+                .offset(y: hasSettled ? 0 : 8)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressablePourStyle())
+        .allowsHitTesting(hasSettled)
+        .accessibilityLabel(type.title)
+        .accessibilityHint(type == .espresso ? "Starts an espresso martini rating" : "Starts a classic martini rating")
+    }
+}
+
+private struct PressablePourStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.72), value: configuration.isPressed)
     }
 }
 
@@ -3892,19 +4042,38 @@ enum RankingCategory: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var symbol: String {
+    func symbol(for scope: MartiniTypeScope) -> String {
         switch self {
         case .bestOverall: return "star.fill"
-        case .dirtiest: return "drop.fill"
+        case .dirtiest:
+            switch scope {
+            case .classic: return "drop.fill"
+            case .espresso: return "cup.and.saucer.fill"
+            case .all: return "slider.horizontal.3"
+            }
         case .bestValue: return "dollarsign.circle.fill"
         case .mostUnique: return "sparkles"
         }
     }
 
-    var heading: String {
+    func title(for scope: MartiniTypeScope) -> String {
+        guard self == .dirtiest else { return rawValue }
+        switch scope {
+        case .classic: return "Dirtiest"
+        case .espresso: return "Strongest"
+        case .all: return "Trait Intensity"
+        }
+    }
+
+    func heading(for scope: MartiniTypeScope) -> String {
         switch self {
         case .bestOverall: return "YOUR PERSONAL ORDER"
-        case .dirtiest: return "YOUR DIRTIEST MARTINIS"
+        case .dirtiest:
+            switch scope {
+            case .classic: return "YOUR DIRTIEST MARTINIS"
+            case .espresso: return "YOUR STRONGEST ESPRESSO MARTINIS"
+            case .all: return "YOUR STRONGEST SIGNATURE TRAITS"
+            }
         case .bestValue: return "BEST VALUE · RATING ÷ PRICE"
         case .mostUnique: return "YOUR MOST UNIQUE MARTINIS"
         }
@@ -3916,7 +4085,7 @@ enum RankingCategory: String, CaseIterable, Identifiable {
             case .bestOverall:
                 return first.elo > second.elo
             case .dirtiest:
-                return first.dirtiness > second.dirtiness
+                return signatureIntensity(for: first) > signatureIntensity(for: second)
             case .bestValue:
                 let firstValue = valueScore(for: first)
                 let secondValue = valueScore(for: second)
@@ -3932,12 +4101,16 @@ enum RankingCategory: String, CaseIterable, Identifiable {
         return venue.score / price
     }
 
+    private func signatureIntensity(for venue: MartiniVenue) -> Double {
+        venue.martiniType == .espresso ? venue.chilliness : venue.dirtiness
+    }
+
     func primaryMetric(for venue: MartiniVenue) -> String {
         switch self {
         case .bestOverall:
             return String(format: "%.1f", venue.score)
         case .dirtiest:
-            return "\(min(5, max(1, Int(venue.dirtiness.rounded()) + 1)))/5"
+            return "\(min(5, max(1, Int(signatureIntensity(for: venue).rounded()) + 1)))/5"
         case .bestValue:
             guard let price = venue.price else { return "—" }
             return price.formatted(.currency(code: "USD").precision(.fractionLength(0)))
@@ -3949,7 +4122,7 @@ enum RankingCategory: String, CaseIterable, Identifiable {
     func metricCaption(for venue: MartiniVenue) -> String {
         switch self {
         case .bestOverall: return "RATING"
-        case .dirtiest: return "DIRTINESS"
+        case .dirtiest: return venue.martiniType == .espresso ? "COFFEE" : "DIRTINESS"
         case .bestValue: return "\(String(format: "%.1f", venue.score)) RATING"
         case .mostUnique: return "UNIQUE"
         }
@@ -3980,8 +4153,8 @@ struct RankingsView: View {
                                     }
                                 } label: {
                                     VStack(alignment: .leading, spacing: 11) {
-                                        Image(systemName: category.symbol).font(.title2).foregroundStyle(isAllMode ? TinisColor.forest : TinisColor.gold)
-                                        Text(category.rawValue).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(isAllMode ? TinisColor.ink : TinisColor.cream)
+                                        Image(systemName: category.symbol(for: app.martiniTypeScope)).font(.title2).foregroundStyle(isAllMode ? TinisColor.forest : TinisColor.gold)
+                                        Text(category.title(for: app.martiniTypeScope)).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(isAllMode ? TinisColor.ink : TinisColor.cream)
                                         Text(selectedCategory == category ? "Viewing ranking" : "View ranking  →")
                                             .font(.system(size: 10, design: .rounded))
                                             .foregroundStyle(isAllMode ? TinisColor.moss : TinisColor.gold)
@@ -4006,7 +4179,7 @@ struct RankingsView: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        Text(selectedCategory.heading).font(.caption.bold()).tracking(1.2).foregroundStyle(isAllMode ? TinisColor.forest : TinisColor.gold)
+                        Text(selectedCategory.heading(for: app.martiniTypeScope)).font(.caption.bold()).tracking(1.2).foregroundStyle(isAllMode ? TinisColor.forest : TinisColor.gold)
                         VStack(spacing: 1) {
                             let rankedVenues = selectedCategory.sorted(app.venues.filter { app.martiniTypeScope.includes($0.martiniType) })
                             ForEach(rankedVenues.indices, id: \.self) { index in

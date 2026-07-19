@@ -17,6 +17,8 @@ For a new checkout, copy `Tinis/Config/Secrets.xcconfig.example` to `Tinis/Confi
 
 The initial migration is `supabase/migrations/202607150001_initial_tinis_schema.sql`. It was applied to the project on July 15, 2026.
 
+The Google restaurant discovery migration is `supabase/migrations/202607180004_add_google_place_discovery.sql`. It was applied on July 18, 2026. It stores Google place IDs, safely links legacy name-based venues when they are rated again, and exposes restaurant identity through the private friend-feed and leaderboard views.
+
 It creates the profiles, clubs, memberships, invites, venues, ratings, private notes, personal ranks, comparisons, blocks, and reports tables. It also installs row-level security policies, friend-feed and leaderboard views, rating RPCs, and the private `rating-photos` storage bucket.
 
 The starter club is `tini's martini club`. Its invite code is provisioned directly in Supabase and is never stored in this repository.

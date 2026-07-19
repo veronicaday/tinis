@@ -50,6 +50,10 @@ struct MartiniVenue: Identifiable, Hashable {
     var cheersCount: Int = 0
     var isCheered: Bool = false
     var visitedAt: String? = nil
+    var backendVenueID: UUID? = nil
+    var googlePlaceID: String? = nil
+    var fullAddress: String? = nil
+    var photoURL: URL? = nil
 }
 
 enum DuelChoice: String {
@@ -238,6 +242,14 @@ final class TinisStore: ObservableObject {
         }
     }
 
+    func venue(matching place: GooglePlaceSelection) -> MartiniVenue? {
+        if let placeID = place.placeID,
+           let exactMatch = venues.first(where: { $0.googlePlaceID == placeID }) {
+            return exactMatch
+        }
+        return existingVenue(named: place.name, location: place.location)
+    }
+
     func topVenue(excluding venue: MartiniVenue?) -> MartiniVenue? {
         venues
             .filter { $0.id != venue?.id }
@@ -271,6 +283,9 @@ final class TinisStore: ObservableObject {
             venues[index].price = venue.price
             venues[index].note = venue.note
             venues[index].companions = venue.companions
+            venues[index].backendVenueID = venue.backendVenueID ?? venues[index].backendVenueID
+            venues[index].googlePlaceID = venue.googlePlaceID ?? venues[index].googlePlaceID
+            venues[index].fullAddress = venue.fullAddress ?? venues[index].fullAddress
             selectedVenue = venues[index]
         } else {
             venues.append(venue)
@@ -321,7 +336,10 @@ final class TinisStore: ObservableObject {
                 backendRatingID: row.ratingID,
                 ratingOwnerID: row.ratingUserID,
                 isOwnRating: row.isOwnRating ?? false,
-                visitedAt: row.latestVisit
+                visitedAt: row.latestVisit,
+                backendVenueID: row.venueID,
+                googlePlaceID: row.googlePlaceID,
+                fullAddress: row.fullAddress
             )
         }
     }
@@ -732,7 +750,8 @@ struct HomeView: View {
             isOwnRating: activity.isOwnRating,
             cheersCount: activity.cheersCount,
             isCheered: activity.isCheered,
-            visitedAt: activity.visitedAt
+            visitedAt: activity.visitedAt,
+            photoURL: activity.photoURL
         )
     }
 
@@ -1031,6 +1050,7 @@ struct SearchView: View {
     @EnvironmentObject private var app: TinisStore
     @State private var isShowingPlaceSearch = false
     @State private var searchNotice: String?
+    @State private var selectedPlace: GooglePlaceSelection?
 
     var body: some View {
         ZStack {
@@ -1083,7 +1103,12 @@ struct SearchView: View {
                     LazyVStack(spacing: 10) {
                         ForEach(Array(app.venues.enumerated()), id: \.element.id) { index, venue in
                             Button {
-                                app.selectedVenue = venue
+                                selectedPlace = GooglePlaceSelection(
+                                    placeID: venue.googlePlaceID,
+                                    name: venue.name,
+                                    location: venue.location,
+                                    fullAddress: venue.fullAddress
+                                )
                             } label: {
                                 HStack(spacing: 12) {
                                     VenueThumbnail(index: index + 1)
@@ -1113,18 +1138,15 @@ struct SearchView: View {
             .padding(.horizontal, 18)
             .padding(.top, 14)
         }
-        .sheet(item: $app.selectedVenue) {
-            VenueDetailView(venue: $0)
+        .sheet(item: $selectedPlace) { place in
+            RestaurantRatingsView(place: place, matchedVenue: app.venue(matching: place))
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .tinisPlaceSearch(
             show: $isShowingPlaceSearch,
             onSelection: { selection in
-                app.pendingGooglePlace = selection
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    app.selectedTab = 2
-                }
+                selectedPlace = selection
             },
             onError: { _ in
                 searchNotice = "Google venue search could not load. Please check your connection and try again."
@@ -1138,6 +1160,312 @@ struct SearchView: View {
         } message: {
             Text(searchNotice ?? "")
         }
+    }
+}
+
+struct RestaurantRatingsView: View {
+    @EnvironmentObject private var app: TinisStore
+    @EnvironmentObject private var backend: TinisBackend
+    @Environment(\.dismiss) private var dismiss
+
+    let place: GooglePlaceSelection
+    let matchedVenue: MartiniVenue?
+
+    @State private var ratings: [TinisFriendFeedRow] = []
+    @State private var isLoading = true
+    @State private var selectedRating: MartiniVenue?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ZStack(alignment: .bottomLeading) {
+                        MartiniArtwork(variant: abs(place.name.hashValue) % 4)
+                            .frame(height: 225)
+                        LinearGradient(colors: [.clear, Color.black.opacity(0.86)], startPoint: .center, endPoint: .bottom)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(place.name)
+                                .font(.system(size: 29, design: .serif))
+                            Text(place.fullAddress ?? place.location)
+                                .font(.system(size: 11, design: .rounded))
+                                .opacity(0.76)
+                                .lineLimit(2)
+                        }
+                        .foregroundStyle(TinisColor.cream)
+                        .padding(18)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(TinisColor.gold.opacity(0.28)))
+
+                    if let matchedVenue {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("YOUR CLUB")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .tracking(1.2)
+                                    .foregroundStyle(TinisColor.moss)
+                                Text("\(matchedVenue.ratingCount) \(matchedVenue.ratingCount == 1 ? "rating" : "ratings") from current members")
+                                    .font(.system(size: 12, design: .rounded))
+                                    .foregroundStyle(TinisColor.ink.opacity(0.58))
+                            }
+                            Spacer()
+                            ScoreBadge(score: matchedVenue.score)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("CLUB RATINGS")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .tracking(1.2)
+                            .foregroundStyle(TinisColor.moss)
+
+                        if isLoading {
+                            HStack(spacing: 10) {
+                                ProgressView().tint(TinisColor.forest)
+                                Text("Gathering your friends’ ratings…")
+                                    .font(.system(size: 12, design: .rounded))
+                                    .foregroundStyle(TinisColor.ink.opacity(0.56))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 34)
+                        } else if ratings.isEmpty {
+                            VStack(spacing: 10) {
+                                OliveMark()
+                                    .scaleEffect(0.68)
+                                    .frame(height: 42)
+                                Text("No club ratings yet")
+                                    .font(.system(size: 23, design: .serif))
+                                Text("Be the first current member to remember a martini here.")
+                                    .font(.system(size: 12, design: .rounded))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(TinisColor.ink.opacity(0.56))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 30)
+                            .background(TinisColor.softWhite.opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(TinisColor.line))
+                        } else {
+                            ForEach(ratings) { row in
+                                let cheers = backend.cheersByRating[row.id] ?? TinisCheersState(
+                                    count: row.cheersCount ?? 0,
+                                    isCheered: row.cheeredByMe ?? false
+                                )
+                                ClubRestaurantRatingCard(
+                                    row: row,
+                                    photoURL: backend.photoURLs[row.id],
+                                    avatarURL: backend.avatarURLs[row.userID],
+                                    cheers: cheers,
+                                    isOwnRating: backend.currentUserID == row.userID,
+                                    openRating: { selectedRating = ratingVenue(from: row) },
+                                    cheersAction: { Task { await backend.toggleCheers(for: row.id) } }
+                                )
+                            }
+                        }
+                    }
+
+                    Button(action: rateHere) {
+                        HStack {
+                            Image(systemName: "plus")
+                            Text(matchedVenue == nil ? "Be the first to rate here" : "Rate a martini here")
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.cream)
+                        .padding(.horizontal, 17)
+                        .padding(.vertical, 16)
+                        .background(TinisColor.forest, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(20)
+            }
+            .background(TinisColor.cream)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(TinisColor.forest)
+                }
+            }
+            .task(id: matchedVenue?.backendVenueID) {
+                guard let venueID = matchedVenue?.backendVenueID, backend.isConfigured else {
+                    isLoading = false
+                    return
+                }
+                isLoading = true
+                ratings = await backend.clubRatings(for: venueID)
+                isLoading = false
+            }
+            .sheet(item: $selectedRating) { venue in
+                VenueDetailView(venue: venue)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    private func rateHere() {
+        app.pendingGooglePlace = place
+        dismiss()
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                app.selectedTab = 2
+            }
+        }
+    }
+
+    private func ratingVenue(from row: TinisFriendFeedRow) -> MartiniVenue {
+        let location = [row.city, row.region].filter { !$0.isEmpty }.joined(separator: ", ")
+        let cold = (row.chilliness ?? 2) >= 3 ? "very cold" : "soft"
+        let dirty = (row.dirtiness ?? 2) >= 3 ? "dirty" : "clean"
+        let cheers = backend.cheersByRating[row.id] ?? TinisCheersState(
+            count: row.cheersCount ?? 0,
+            isCheered: row.cheeredByMe ?? false
+        )
+        return MartiniVenue(
+            name: row.venueName,
+            location: location,
+            score: row.score,
+            ratingCount: 1,
+            date: displayDate(row.visitedAt ?? row.createdAt),
+            trait: "\(cold), \(dirty)",
+            dirtiness: row.dirtiness ?? 2,
+            chilliness: row.chilliness ?? 2,
+            uniqueness: row.uniqueness ?? 2,
+            spiritForward: row.spiritForward ?? 2,
+            elo: TinisElo.startingRating,
+            spirit: row.spirit?.capitalized ?? "Unknown",
+            garnish: row.garnish?.capitalized ?? "Unknown",
+            servingStyle: row.servingStyle?.capitalized ?? "Unknown",
+            price: row.price,
+            note: row.publicNote ?? "",
+            companions: row.companions ?? [],
+            backendRatingID: row.id,
+            ratingOwnerID: row.userID,
+            ratingOwnerName: row.displayName,
+            isOwnRating: backend.currentUserID == row.userID,
+            cheersCount: cheers.count,
+            isCheered: cheers.isCheered,
+            visitedAt: row.visitedAt,
+            backendVenueID: row.venueID,
+            googlePlaceID: row.googlePlaceID ?? place.placeID,
+            fullAddress: row.fullAddress ?? place.fullAddress,
+            photoURL: backend.photoURLs[row.id]
+        )
+    }
+
+    private func displayDate(_ timestamp: String) -> String {
+        let rawDate = String(timestamp.prefix(10))
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: rawDate) else { return "Recent visit" }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
+struct ClubRestaurantRatingCard: View {
+    let row: TinisFriendFeedRow
+    let photoURL: URL?
+    let avatarURL: URL?
+    let cheers: TinisCheersState
+    let isOwnRating: Bool
+    let openRating: () -> Void
+    let cheersAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Button(action: openRating) {
+                VStack(alignment: .leading, spacing: 11) {
+                    HStack(spacing: 10) {
+                        ProfileAvatarView(
+                            name: row.displayName,
+                            imageURL: avatarURL,
+                            size: 38,
+                            fallbackColor: TinisColor.moss,
+                            borderColor: TinisColor.gold.opacity(0.38)
+                        )
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(row.displayName)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            Text(isOwnRating ? "Your rating" : "Club member")
+                                .font(.system(size: 10, design: .rounded))
+                                .foregroundStyle(TinisColor.ink.opacity(0.48))
+                        }
+                        Spacer()
+                        ScoreBadge(score: row.score)
+                    }
+
+                    if let photoURL {
+                        AsyncImage(url: photoURL) { phase in
+                            if case let .success(image) = phase {
+                                image.resizable().scaledToFill()
+                            } else {
+                                TinisColor.paper
+                            }
+                        }
+                        .frame(height: 125)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
+                    Text(traitSummary)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.moss)
+                    if let note = row.publicNote, !note.isEmpty {
+                        Text("“\(note)”")
+                            .font(.system(size: 14, design: .serif))
+                            .foregroundStyle(TinisColor.ink.opacity(0.76))
+                            .lineLimit(3)
+                    }
+                }
+                .foregroundStyle(TinisColor.ink)
+            }
+            .buttonStyle(.plain)
+
+            Divider().overlay(TinisColor.line.opacity(0.8))
+
+            HStack {
+                if isOwnRating {
+                    Label("Your rating", systemImage: "pencil")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.moss)
+                } else {
+                    Button(action: cheersAction) {
+                        HStack(spacing: 5) {
+                            Text("🍸")
+                            Text("Cheers")
+                            if cheers.count > 0 { Text("\(cheers.count)").monospacedDigit() }
+                        }
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(cheers.isCheered ? TinisColor.cream : TinisColor.forest)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(cheers.isCheered ? TinisColor.forest : TinisColor.paleGold.opacity(0.38), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+                Button(action: openRating) {
+                    Label("Details", systemImage: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TinisColor.ink.opacity(0.46))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .background(TinisColor.softWhite.opacity(0.78), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(TinisColor.gold.opacity(0.25)))
+    }
+
+    private var traitSummary: String {
+        let cold = (row.chilliness ?? 2) >= 3 ? "Very cold" : "Soft"
+        let dirty = (row.dirtiness ?? 2) >= 3 ? "dirty" : "clean"
+        return "\(cold) · \(dirty)"
     }
 }
 
@@ -1158,8 +1486,21 @@ struct VenueDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ZStack(alignment: .bottomLeading) {
-                        MartiniArtwork(variant: abs(displayedVenue.name.hashValue) % 4)
-                            .frame(height: 285)
+                        Group {
+                            if let photoURL = displayedVenue.photoURL {
+                                AsyncImage(url: photoURL) { phase in
+                                    if case let .success(image) = phase {
+                                        image.resizable().scaledToFill()
+                                    } else {
+                                        MartiniArtwork(variant: abs(displayedVenue.name.hashValue) % 4)
+                                    }
+                                }
+                            } else {
+                                MartiniArtwork(variant: abs(displayedVenue.name.hashValue) % 4)
+                            }
+                        }
+                        .frame(height: 285)
+                        .clipped()
                         LinearGradient(colors: [.clear, Color.black.opacity(0.84)], startPoint: .center, endPoint: .bottom)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(displayedVenue.name)
@@ -1239,15 +1580,6 @@ struct VenueDetailView: View {
 
                     TraitSummary(venue: displayedVenue)
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("FRIEND RATINGS").font(.caption.bold()).tracking(1.2)
-                        HStack(spacing: 17) {
-                            FriendScore(name: displayedVenue.isOwnRating ? "You" : (displayedVenue.ratingOwnerName ?? "Friend"), score: displayedVenue.score, color: TinisColor.moss)
-                            FriendScore(name: "Sarah", score: 9.2, color: .pink.opacity(0.7))
-                            FriendScore(name: "Alex", score: 8.0, color: .purple.opacity(0.7))
-                            FriendScore(name: "Maya", score: 8.6, color: .orange.opacity(0.7))
-                        }
-                    }
                 }
                 .padding(20)
             }
@@ -1716,6 +2048,8 @@ struct AddMartiniView: View {
     @State private var didSaveDespiteNotice = false
     @State private var isShowingPlaceSearch = false
     @State private var placeSearchNotice: String?
+    @State private var googlePlaceID: String?
+    @State private var fullAddress: String?
 
     var body: some View {
         NavigationStack {
@@ -1791,7 +2125,9 @@ struct AddMartiniView: View {
                                     note: note.trimmingCharacters(in: .whitespacesAndNewlines),
                                     companions: availableFriends
                                         .filter { selectedCompanionIDs.contains($0.id) }
-                                        .map(\.displayName)
+                                        .map(\.displayName),
+                                    googlePlaceID: googlePlaceID,
+                                    fullAddress: fullAddress
                                 )
                                 Task {
                                     do {
@@ -1910,6 +2246,8 @@ struct AddMartiniView: View {
     private func applyGooglePlace(_ selection: GooglePlaceSelection) {
         venueName = selection.name
         location = selection.location
+        googlePlaceID = selection.placeID
+        fullAddress = selection.fullAddress
     }
 
     private func resetForm() {
@@ -1924,6 +2262,8 @@ struct AddMartiniView: View {
         visitDate = Date()
         selectedCompanionIDs = []
         photoData = nil
+        googlePlaceID = nil
+        fullAddress = nil
         traits = ["Dirtiness": 3.0, "Chilliness": 4.0, "Uniqueness": 2.0, "Spirit-forward": 4.0]
         duelChoice = nil
         isSaving = false

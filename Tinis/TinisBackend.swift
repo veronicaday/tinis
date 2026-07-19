@@ -38,6 +38,8 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
     let avatarPath: String?
     let venueID: UUID
     let venueName: String
+    let googlePlaceID: String?
+    let fullAddress: String?
     let city: String
     let region: String
     let score: Double
@@ -65,6 +67,8 @@ struct TinisFriendFeedRow: Decodable, Equatable, Identifiable {
         case avatarPath = "avatar_path"
         case venueID = "venue_id"
         case venueName = "venue_name"
+        case googlePlaceID = "google_place_id"
+        case fullAddress = "full_address"
         case city, region, score, dirtiness, chilliness, uniqueness, spirit, garnish, price, companions
         case spiritForward = "spirit_forward"
         case servingStyle = "serving_style"
@@ -81,6 +85,8 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
     let clubID: UUID
     let venueID: UUID
     let venueName: String
+    let googlePlaceID: String?
+    let fullAddress: String?
     let city: String
     let region: String
     let score: Double
@@ -106,6 +112,8 @@ struct TinisLeaderboardRow: Decodable, Equatable, Identifiable {
         case clubID = "club_id"
         case venueID = "venue_id"
         case venueName = "venue_name"
+        case googlePlaceID = "google_place_id"
+        case fullAddress = "full_address"
         case city, region, score, dirtiness, chilliness, uniqueness
         case ratingCount = "rating_count"
         case spiritForward = "spirit_forward"
@@ -137,6 +145,8 @@ private struct SaveRatingParameters: Encodable {
     let garnish: String
     let servingStyle: String
     let price: Double?
+    let googlePlaceID: String?
+    let fullAddress: String?
 
     enum CodingKeys: String, CodingKey {
         case clubID = "p_club_id"
@@ -151,6 +161,8 @@ private struct SaveRatingParameters: Encodable {
         case garnish = "p_garnish"
         case servingStyle = "p_serving_style"
         case price = "p_price"
+        case googlePlaceID = "p_google_place_id"
+        case fullAddress = "p_full_address"
     }
 }
 
@@ -503,7 +515,9 @@ final class TinisBackend: ObservableObject {
             spirit: spirit.lowercased(),
             garnish: garnish.lowercased(),
             servingStyle: servingStyle.lowercased(),
-            price: Double(price)
+            price: Double(price),
+            googlePlaceID: venue.googlePlaceID,
+            fullAddress: venue.fullAddress
         )
 
         let ratingID: UUID
@@ -688,6 +702,36 @@ final class TinisBackend: ObservableObject {
         } catch {
             cheersByRating[ratingID] = previous
             errorMessage = "Your cheers could not be saved. Please try again."
+        }
+    }
+
+    func clubRatings(for venueID: UUID) async -> [TinisFriendFeedRow] {
+        guard let client, clubID != nil else { return [] }
+
+        do {
+            let rows: [TinisFriendFeedRow] = try await client
+                .from("friend_feed")
+                .select()
+                .eq("venue_id", value: venueID)
+                .order("visited_at", ascending: false)
+                .execute()
+                .value
+
+            for row in rows {
+                if let photoPath = row.photoPath {
+                    photoURLs[row.id] = try? await client.storage
+                        .from("rating-photos")
+                        .createSignedURL(path: photoPath, expiresIn: 60 * 60)
+                }
+                cheersByRating[row.id] = TinisCheersState(
+                    count: row.cheersCount ?? 0,
+                    isCheered: row.cheeredByMe ?? false
+                )
+            }
+            return rows
+        } catch {
+            errorMessage = "Your club’s ratings could not load just now. Please try again."
+            return []
         }
     }
 

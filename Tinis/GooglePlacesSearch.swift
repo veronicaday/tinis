@@ -2,11 +2,15 @@ import SwiftUI
 import UIKit
 import GooglePlacesSwift
 
-struct GooglePlaceSelection: Equatable {
+struct GooglePlaceSelection: Equatable, Identifiable {
     let placeID: String?
     let name: String
     let location: String
     let fullAddress: String?
+
+    var id: String {
+        placeID ?? "\(name.lowercased())|\(location.lowercased())"
+    }
 }
 
 @MainActor

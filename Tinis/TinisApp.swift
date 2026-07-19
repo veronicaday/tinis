@@ -505,6 +505,7 @@ struct MartiniBowl: Shape {
 struct MartiniArtwork: View {
     var variant = 0
     var showOlives = true
+    var wideCardVerticalOffset: CGFloat = 0.28
 
     var body: some View {
         GeometryReader { geo in
@@ -519,7 +520,7 @@ struct MartiniArtwork: View {
                         width: isWideCard ? min(geo.size.width, geo.size.height * 1.95) : geo.size.width,
                         height: isWideCard ? geo.size.height * 1.95 : geo.size.height
                     )
-                    .offset(y: isWideCard ? geo.size.height * 0.28 : 0)
+                    .offset(y: isWideCard ? geo.size.height * wideCardVerticalOffset : 0)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -670,6 +671,9 @@ struct HomeView: View {
     @EnvironmentObject private var app: TinisStore
     @EnvironmentObject private var backend: TinisBackend
     @State private var demoCheeredIDs: Set<UUID> = []
+    @State private var selectedFriend: String?
+    @State private var isShowingClubActivity = false
+    @State private var hasSeenClubActivity = false
 
     private let demoActivity = [
         FriendActivity(friend: "Sarah", initials: "S", venueName: "Bemelmans Bar", location: "New York, NY", score: 9.2, trait: "Very cold · lightly dirty", note: "Perfectly cold and exactly dirty enough.", time: "12 min ago", rankingUpdate: "New #1", avatarHex: 0xC85B68, artworkVariant: 0, photoURL: nil),
@@ -678,8 +682,8 @@ struct HomeView: View {
         FriendActivity(friend: "Jack", initials: "J", venueName: "Employees Only", location: "New York, NY", score: 7.5, trait: "Spirit-forward · clean", note: "Strong, serious, and maybe a little too warm.", time: "Yesterday", rankingUpdate: "Now #4", avatarHex: 0xB27645, artworkVariant: 3, photoURL: nil)
     ]
 
-    private var activity: [FriendActivity] {
-        guard backend.isConfigured else {
+    private var allActivity: [FriendActivity] {
+        guard backend.isReady else {
             return demoActivity.map { item in
                 var updated = item
                 updated.isCheered = demoCheeredIDs.contains(item.id)
@@ -728,6 +732,15 @@ struct HomeView: View {
         }
     }
 
+    private var activity: [FriendActivity] {
+        guard let selectedFriend else { return allActivity }
+        return allActivity.filter { $0.friend == selectedFriend }
+    }
+
+    private var friendNames: [String] {
+        Array(Set(allActivity.map(\.friend))).sorted()
+    }
+
     private func detailVenue(for activity: FriendActivity) -> MartiniVenue {
         MartiniVenue(
             name: activity.venueName,
@@ -769,16 +782,34 @@ struct HomeView: View {
                                 Text("Recent Pours")
                                     .font(.system(size: 29, weight: .regular, design: .serif))
                                     .kerning(-0.4)
-                                Text("What your friends are rating")
+                                Text("What your friends are drinking")
                                     .font(.system(size: 12, design: .rounded))
                                     .foregroundStyle(TinisColor.cream.opacity(0.72))
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 10) {
                                 AvatarStack()
-                                Image(systemName: "bell")
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(TinisColor.gold)
+                                Button {
+                                    hasSeenClubActivity = true
+                                    isShowingClubActivity = true
+                                } label: {
+                                    Image(systemName: "bell")
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(TinisColor.gold)
+                                        .frame(width: 30, height: 30)
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Club activity")
+                                .overlay(alignment: .topTrailing) {
+                                    if !hasSeenClubActivity && !allActivity.isEmpty {
+                                        Circle()
+                                            .fill(TinisColor.blush)
+                                            .frame(width: 7, height: 7)
+                                            .overlay(Circle().stroke(TinisColor.deepForest, lineWidth: 1.5))
+                                            .offset(x: -2, y: 2)
+                                    }
+                                }
                             }
                         }
                         .foregroundStyle(TinisColor.cream)
@@ -789,19 +820,34 @@ struct HomeView: View {
                                 .tracking(1.3)
                                 .foregroundStyle(TinisColor.gold)
                             Spacer()
-                            Label("Everyone", systemImage: "chevron.down")
+                            Picker(selection: $selectedFriend) {
+                                Text("Everyone").tag(String?.none)
+                                ForEach(friendNames, id: \.self) { friend in
+                                    Text(friend).tag(Optional(friend))
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text(selectedFriend ?? "Everyone")
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 8, weight: .bold))
+                                }
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(TinisColor.cream.opacity(0.68))
+                                    .foregroundStyle(TinisColor.cream.opacity(0.72))
+                            }
+                            .pickerStyle(.menu)
+                            .tint(TinisColor.cream.opacity(0.72))
                         }
 
-                        if backend.isConfigured && activity.isEmpty {
+                        if activity.isEmpty {
                             VStack(spacing: 13) {
                                 OliveMark()
                                     .scaleEffect(0.72)
                                     .frame(height: 44)
-                                Text("No pours yet")
+                                Text(selectedFriend.map { "No pours from \($0) yet" } ?? "No pours yet")
                                     .font(.system(size: 24, design: .serif))
-                                Text("Be the first to rate a martini. Your friends’ ratings will appear here as they join in.")
+                                Text(selectedFriend == nil
+                                     ? "Be the first to rate a martini. Your friends’ ratings will appear here as they join in."
+                                     : "Try another friend or switch back to Everyone.")
                                     .font(.system(size: 12, design: .rounded))
                                     .multilineTextAlignment(.center)
                                     .foregroundStyle(TinisColor.cream.opacity(0.66))
@@ -841,7 +887,91 @@ struct HomeView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $isShowingClubActivity) {
+                ClubActivitySheet(activity: allActivity) { item in
+                    isShowingClubActivity = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        app.selectedVenue = detailVenue(for: item)
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
         }
+    }
+}
+
+struct ClubActivitySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let activity: [FriendActivity]
+    let openActivity: (FriendActivity) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    if activity.isEmpty {
+                        VStack(spacing: 12) {
+                            OliveMark()
+                                .scaleEffect(0.72)
+                                .frame(height: 44)
+                            Text("Quiet at the bar")
+                                .font(.system(size: 25, design: .serif))
+                            Text("New ratings from your club will appear here.")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundStyle(TinisColor.ink.opacity(0.55))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 54)
+                    } else {
+                        ForEach(activity) { item in
+                            Button {
+                                openActivity(item)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ProfileAvatarView(
+                                        name: item.friend,
+                                        imageURL: item.avatarURL,
+                                        size: 40,
+                                        fallbackColor: Color(hex: item.avatarHex),
+                                        borderColor: TinisColor.gold.opacity(0.38)
+                                    )
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("\(item.friend) rated \(item.venueName)")
+                                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(TinisColor.ink)
+                                            .lineLimit(2)
+                                        Text("\(item.rankingUpdate) · \(item.time)")
+                                            .font(.system(size: 10, design: .rounded))
+                                            .foregroundStyle(TinisColor.ink.opacity(0.5))
+                                    }
+                                    Spacer()
+                                    ScoreBadge(score: item.score)
+                                }
+                                .padding(13)
+                                .background(TinisColor.softWhite, in: RoundedRectangle(cornerRadius: 13))
+                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background(TinisColor.cream)
+            .navigationTitle("Club activity")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(TinisColor.cream, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(TinisColor.forest)
+                }
+            }
+        }
+        .preferredColorScheme(.light)
     }
 }
 
@@ -1701,17 +1831,24 @@ struct EditRatingView: View {
                             OptionPills(label: "Serve", options: ["Up", "Rocks", "Other"], selection: $servingStyle)
                             Divider()
                             HStack {
-                                Text("Price").font(.system(size: 12, weight: .medium, design: .rounded))
+                                Text("Price")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(TinisColor.ink)
                                 Spacer()
                                 Text("$").foregroundStyle(TinisColor.moss)
                                 TextField("19", text: $price)
                                     .keyboardType(.decimalPad)
                                     .multilineTextAlignment(.trailing)
+                                    .foregroundStyle(TinisColor.ink)
+                                    .tint(TinisColor.forest)
                                     .frame(width: 64)
                             }
                             Divider()
                             DatePicker("Date", selection: $visitDate, in: ...Date(), displayedComponents: .date)
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(TinisColor.ink)
+                                .tint(TinisColor.forest)
+                                .environment(\.colorScheme, .light)
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
@@ -1727,6 +1864,8 @@ struct EditRatingView: View {
 
                         InfoCard(title: "TASTING NOTES") {
                             TextField("What stood out?", text: $note, axis: .vertical)
+                                .foregroundStyle(TinisColor.ink)
+                                .tint(TinisColor.forest)
                                 .lineLimit(3...6)
                                 .onChange(of: note) { _, newValue in
                                     if newValue.count > 500 { note = String(newValue.prefix(500)) }
@@ -2349,7 +2488,10 @@ struct BasicsStep: View {
                 Divider()
                 HStack {
                     Image(systemName: "building.2").foregroundStyle(TinisColor.moss)
-                    TextField("City", text: $location).textInputAutocapitalization(.words)
+                    TextField("City", text: $location)
+                        .textInputAutocapitalization(.words)
+                        .foregroundStyle(TinisColor.ink)
+                        .tint(TinisColor.forest)
                 }
             }
             VStack(alignment: .leading, spacing: 15) {
@@ -2361,24 +2503,34 @@ struct BasicsStep: View {
                 OptionPills(label: "Garnish", options: ["Olive", "Lemon", "Onion", "Other"], selection: $garnish)
                 OptionPills(label: "Serve", options: ["Up", "Rocks", "Other"], selection: $servingStyle)
                 HStack {
-                    Text("Price").font(.system(size: 12, weight: .medium, design: .rounded))
+                    Text("Price")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(TinisColor.ink)
                     Spacer()
                     Text("$").foregroundStyle(TinisColor.moss)
                     TextField("19", text: $price)
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
+                        .foregroundStyle(TinisColor.ink)
+                        .tint(TinisColor.forest)
                         .frame(width: 48)
                 }
                 Divider()
                 DatePicker("Date", selection: $visitDate, in: ...Date(), displayedComponents: .date)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(TinisColor.ink)
+                    .tint(TinisColor.forest)
+                    .environment(\.colorScheme, .light)
             }
+            .foregroundStyle(TinisColor.ink)
             .padding(15)
             .background(TinisColor.softWhite.opacity(0.78), in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(TinisColor.line.opacity(0.9)))
             InfoCard(title: "TASTING NOTES · OPTIONAL") {
                 TextField("What stood out about this martini?", text: $note, axis: .vertical)
                     .font(.system(size: 14, design: .rounded))
+                    .foregroundStyle(TinisColor.ink)
+                    .tint(TinisColor.forest)
                     .lineLimit(3...6)
                     .onChange(of: note) { _, newValue in
                         if newValue.count > 500 {
@@ -2416,6 +2568,8 @@ struct BasicsStep: View {
                 }
             }
         }
+        .foregroundStyle(TinisColor.ink)
+        .environment(\.colorScheme, .light)
     }
 }
 
@@ -2441,7 +2595,7 @@ struct MartiniPhotoPicker: View {
                         .resizable()
                         .scaledToFill()
                 } else {
-                    MartiniArtwork(variant: 0)
+                    MartiniArtwork(variant: 0, wideCardVerticalOffset: 0.14)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -2458,14 +2612,14 @@ struct MartiniPhotoPicker: View {
                 Button {
                     isShowingPhotoSource = true
                 } label: {
-                    Label(image == nil ? "Add a martini photo" : "Change photo", systemImage: "camera.fill")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(TinisColor.cream)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 10)
-                        .background(TinisColor.forest.opacity(0.94), in: Capsule())
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(TinisColor.forest)
+                        .frame(width: 44, height: 38)
+                        .background(TinisColor.softWhite.opacity(0.96), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(image == nil ? "Add a martini photo" : "Change martini photo")
                 .accessibilityHint("Choose whether to take a new photo or select one from your library")
 
                 if image != nil {
@@ -2662,6 +2816,7 @@ struct OptionPills: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(TinisColor.ink)
                 .frame(width: 52, alignment: .leading)
             ForEach(options, id: \.self) { option in
                 Button {

@@ -310,6 +310,20 @@ final class TinisBackend: ObservableObject {
     }
 
     func start() async {
+#if DEBUG
+#if targetEnvironment(simulator)
+        if !ProcessInfo.processInfo.arguments.contains("-require-auth") {
+            // Keep simulator development unblocked while the temporary email provider
+            // is rate-limited. Release/TestFlight and physical-device builds still
+            // require a real Supabase session. Pass -require-auth when testing login.
+            errorMessage = nil
+            currentDisplayName = "Veronica"
+            phase = .ready
+            return
+        }
+#endif
+#endif
+
         guard let client else {
             phase = .unavailable
             return

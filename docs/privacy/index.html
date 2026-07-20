@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Privacy Policy · tini’s</title>
+    <style>
+      :root {
+        --ink: #18251f;
+        --forest: #003e31;
+        --cream: #fbf3e3;
+        --paper: #f2e6cf;
+        --gold: #c8a85d;
+        --muted: #667069;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--paper);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      header {
+        padding: 72px 24px 64px;
+        color: var(--cream);
+        text-align: center;
+        background: radial-gradient(circle at 50% 0%, #0d5b48, var(--forest) 58%, #00271f);
+      }
+      .mark { color: var(--gold); font-size: 34px; }
+      h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
+      h1 { margin: 12px 0 8px; font-size: clamp(42px, 10vw, 68px); }
+      header p { margin: 0; color: rgba(251, 243, 227, .72); }
+      main {
+        width: min(760px, calc(100% - 32px));
+        margin: -28px auto 56px;
+        padding: clamp(28px, 6vw, 56px);
+        background: var(--cream);
+        border: 1px solid rgba(145, 112, 48, .26);
+        border-radius: 24px;
+        box-shadow: 0 18px 50px rgba(45, 35, 18, .10);
+      }
+      h2 { margin: 38px 0 8px; color: var(--forest); font-size: 26px; }
+      h2:first-of-type { margin-top: 18px; }
+      p, li { color: #35433c; }
+      ul { padding-left: 22px; }
+      a { color: var(--forest); text-decoration-color: var(--gold); text-underline-offset: 3px; }
+      .updated { color: var(--muted); font-size: 14px; }
+      footer { padding: 0 24px 44px; text-align: center; color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="mark" aria-hidden="true">◉</div>
+      <h1>tini’s privacy</h1>
+      <p>A private martini club for friends.</p>
+    </header>
+    <main>
+      <p class="updated">Last updated July 19, 2026</p>
+      <p>This policy explains how tini’s collects, uses, and shares information when you use the iOS app. Tini’s is designed for small, private, invite-only clubs.</p>
+
+      <h2>Information we collect</h2>
+      <ul>
+        <li><strong>Account information:</strong> your authentication identifier, email address when provided by your sign-in method, display name, and profile photo.</li>
+        <li><strong>Martini content:</strong> ratings, traits, prices, notes, visit dates, martini photos, tagged companions, cheers, and ranking comparisons.</li>
+        <li><strong>Venue information:</strong> bar or restaurant names, addresses, Google Place identifiers, and map coordinates associated with a venue you select.</li>
+        <li><strong>Technical information:</strong> our service providers may process basic device, network, request, and diagnostic information needed to operate and secure the service.</li>
+      </ul>
+      <p>Tini’s does not request or store your device’s precise location, and it does not use advertising trackers.</p>
+
+      <h2>How we use information</h2>
+      <p>We use this information to authenticate members, maintain club membership, save and rank martinis, show the private friend feed, support venue search and maps, display photos, prevent abuse, and keep the service reliable.</p>
+
+      <h2>Who can see your content</h2>
+      <p>Your display name, profile photo, ratings, martini photos, public tasting notes, cheers, and friend tags are visible only to current members of the same private club. Your sign-in email is not shown to other club members.</p>
+
+      <h2>Service providers</h2>
+      <p>We use Supabase for authentication, database hosting, and private photo storage; Apple for Sign in with Apple and TestFlight or App Store distribution; and Google Places for venue search and place details. These providers process information under their own terms and privacy policies. We do not sell personal information.</p>
+
+      <h2>Retention and deletion</h2>
+      <p>We retain your account information and content while your account is active. You can permanently delete your account from Profile → Settings → Delete account. Deletion removes your profile, club memberships, ratings, notes, cheers, comparisons, and uploaded photos from the active service. Limited copies may remain temporarily in encrypted service backups until those backups are rotated.</p>
+      <p>If you used Sign in with Apple, you can separately revoke Apple authorization in your Apple Account settings under Sign in with Apple.</p>
+
+      <h2>Security</h2>
+      <p>Access is authenticated, club data is protected by membership-based database rules, and uploaded photos are stored in private buckets using time-limited links. No system can guarantee absolute security, but we limit access to what is needed to operate the service.</p>
+
+      <h2>Children</h2>
+      <p>Tini’s is not directed to children under 13, and we do not knowingly collect personal information from children.</p>
+
+      <h2>Changes and contact</h2>
+      <p>We may update this policy as the app changes. The current version will always appear at this URL. For questions or privacy requests, contact us through the <a href="https://github.com/veronicaday/tinis/issues">tini’s support page</a>.</p>
+    </main>
+    <footer>© 2026 tini’s</footer>
+  </body>
+</html>

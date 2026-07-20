@@ -4754,7 +4754,12 @@ struct ProfileSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isConfirmingSignOut = false
+    @State private var isConfirmingAccountDeletion = false
+    @State private var isDeletingAccount = false
+    @State private var accountDeletionError: String?
     @State private var isShowingAppleConnection = false
+
+    private let privacyPolicyURL = URL(string: "https://veronicaday.github.io/tinis/privacy/")!
 
     private var memberCount: Int {
         backend.clubFriends.count + 1
@@ -4816,13 +4821,38 @@ struct ProfileSettingsView: View {
                                         .font(.system(size: 11, design: .rounded))
                                         .foregroundStyle(TinisColor.ink.opacity(0.58))
                                 }
+
+                                if backend.canDeleteAccount {
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        isConfirmingAccountDeletion = true
+                                    } label: {
+                                        HStack(spacing: 13) {
+                                            Image(systemName: "person.crop.circle.badge.minus")
+                                                .frame(width: 24)
+                                            Text(isDeletingAccount ? "Deleting account…" : "Delete account")
+                                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                            Spacer()
+                                            if isDeletingAccount {
+                                                ProgressView()
+                                                    .tint(Color(hex: 0xA54F45))
+                                            }
+                                        }
+                                        .foregroundStyle(Color(hex: 0xA54F45))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isDeletingAccount)
+                                }
                             }
                         }
 
                         SettingsPanel(title: "ABOUT") {
                             SettingsValueRow(icon: "wineglass", title: "tini’s", detail: "Version 1.0")
                             Divider()
-                            SettingsValueRow(icon: "hand.raised.fill", title: "Privacy", detail: "Only club members can see ratings")
+                            Link(destination: privacyPolicyURL) {
+                                SettingsActionLabel(icon: "hand.raised.fill", title: "Privacy policy")
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         Button(role: .destructive) {
@@ -4861,6 +4891,31 @@ struct ProfileSettingsView: View {
                 }
             } message: {
                 Text("Your ratings stay safe. Sign in with the same Apple Account to return to the club.")
+            }
+            .alert("Permanently delete your account?", isPresented: $isConfirmingAccountDeletion) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete account", role: .destructive) {
+                    isDeletingAccount = true
+                    Task {
+                        let deleted = await backend.deleteAccount()
+                        isDeletingAccount = false
+                        if deleted {
+                            dismiss()
+                        } else {
+                            accountDeletionError = backend.errorMessage
+                        }
+                    }
+                }
+            } message: {
+                Text("This cannot be undone. Your profile, club memberships, ratings, notes, cheers, comparisons, and uploaded photos will be deleted. If you use Sign in with Apple, you can also revoke tini’s in your Apple Account settings.")
+            }
+            .alert("Account not deleted", isPresented: Binding(
+                get: { accountDeletionError != nil },
+                set: { if !$0 { accountDeletionError = nil } }
+            )) {
+                Button("OK") { accountDeletionError = nil }
+            } message: {
+                Text(accountDeletionError ?? "Please try again.")
             }
             .sheet(isPresented: $isShowingAppleConnection) {
                 ZStack {

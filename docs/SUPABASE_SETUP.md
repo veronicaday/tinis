@@ -25,13 +25,27 @@ The starter club is `tini's martini club`. Its invite code is provisioned direct
 
 ## Authentication
 
-While Apple Developer enrollment is pending, the app uses Supabase passwordless email links with the `tinis://login-callback` URL scheme. The link must be opened on the iPhone or simulator where the sign-in request began so the PKCE session can complete.
+The production app uses native Sign in with Apple. Supabase passwordless email links remain available as a temporary fallback using the `tinis://login-callback` URL scheme. An email link must be opened on the iPhone or simulator where the sign-in request began so the PKCE session can complete.
 
-The native Sign in with Apple implementation remains in the codebase for re-enabling after enrollment is active. Enable the Apple provider in Supabase Auth and add the native bundle identifier `com.veronicaday.tinis` to its Client IDs.
+The Apple provider in Supabase Auth uses the native bundle identifier `com.veronicaday.tinis` as its Client ID.
 
 Manual identity linking is enabled during the transition so an existing email-authenticated member can attach Apple to the same Supabase user without losing ratings.
 
-When Apple sign-in is restored, the Xcode target must use an Apple Developer team with the Sign in with Apple capability enabled. Native-only Apple authentication does not require a Services ID, web redirect, or six-month client-secret rotation.
+The Xcode target uses the Apple Developer team with the Sign in with Apple capability enabled. Native-only Apple authentication does not require a Services ID, web redirect, or six-month client-secret rotation.
+
+## Account deletion
+
+The app's Settings screen calls the authenticated `delete-account` Edge Function. The function removes the member's Storage objects, transfers ownership of any shared club to its longest-standing remaining member, deletes an empty club, and finally deletes the Supabase Auth user. Database rows owned by that profile are then removed by foreign-key cascades.
+
+Before deploying the function, apply `supabase/migrations/202607190002_prepare_account_deletion.sql`. It changes venue creator history to `ON DELETE SET NULL`, so an account can be removed without deleting a shared venue.
+
+Deploy `supabase/functions/delete-account/index.ts` with Supabase's normal JWT verification enabled. Its service-role access must remain server-side; never copy the service-role key into the app or this repository.
+
+The current native Apple flow does not retain an Apple refresh token, so the deletion flow cannot revoke the Sign in with Apple grant automatically. The app directs members who want to revoke that grant to Apple Account Settings after deletion. Automatic revocation can be added later by securely exchanging and retaining Apple's authorization code on the server.
+
+## Privacy policy
+
+The public policy source is `docs/privacy/index.html`, intended for GitHub Pages at `https://veronicaday.github.io/tinis/privacy/`. The same URL is linked from the in-app Settings screen and should be entered in App Store Connect.
 
 ## Database password
 

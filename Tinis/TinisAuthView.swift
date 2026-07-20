@@ -7,6 +7,8 @@ struct TinisAuthGateView: View {
     @EnvironmentObject private var backend: TinisBackend
     @State private var isUsingEmail = false
 
+    private let privacyPolicyURL = URL(string: "https://veronicaday.github.io/tinis/privacy/")!
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -50,6 +52,14 @@ struct TinisAuthGateView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .safeAreaInset(edge: .bottom) {
+            if backend.phase != .checking {
+                Link("Privacy policy", destination: privacyPolicyURL)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(TinisColor.gold.opacity(0.82))
+                    .padding(.vertical, 8)
+            }
+        }
     }
 }
 
@@ -321,6 +331,9 @@ private struct TinisInviteView: View {
     @State private var displayName = ""
     @State private var code = ""
     @State private var isJoining = false
+    @State private var isConfirmingAccountDeletion = false
+    @State private var isDeletingAccount = false
+    @State private var accountDeletionError: String?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -400,12 +413,59 @@ private struct TinisInviteView: View {
                 isJoining
             )
             .padding(.top, 13)
+
+            HStack(spacing: 22) {
+                Button("Sign out") {
+                    Task { await backend.signOut() }
+                }
+                .foregroundStyle(TinisColor.cream.opacity(0.68))
+                .disabled(isDeletingAccount)
+
+                Button("Delete account", role: .destructive) {
+                    isConfirmingAccountDeletion = true
+                }
+                .foregroundStyle(TinisColor.blush)
+                .disabled(isDeletingAccount)
+            }
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .padding(.top, 18)
+
+            if isDeletingAccount {
+                ProgressView("Deleting account…")
+                    .font(.system(size: 11, design: .rounded))
+                    .tint(TinisColor.gold)
+                    .foregroundStyle(TinisColor.cream.opacity(0.68))
+                    .padding(.top, 10)
+            }
             Spacer()
         }
         .padding(.horizontal, 28)
         .onAppear {
             displayName = backend.currentDisplayName ?? ""
             focusedField = displayName.isEmpty ? .displayName : .code
+        }
+        .alert("Permanently delete your account?", isPresented: $isConfirmingAccountDeletion) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete account", role: .destructive) {
+                isDeletingAccount = true
+                Task {
+                    let deleted = await backend.deleteAccount()
+                    isDeletingAccount = false
+                    if !deleted {
+                        accountDeletionError = backend.errorMessage
+                    }
+                }
+            }
+        } message: {
+            Text("This cannot be undone. Your profile and any associated data will be permanently deleted. If you use Sign in with Apple, you can also revoke tini’s in your Apple Account settings.")
+        }
+        .alert("Account not deleted", isPresented: Binding(
+            get: { accountDeletionError != nil },
+            set: { if !$0 { accountDeletionError = nil } }
+        )) {
+            Button("OK") { accountDeletionError = nil }
+        } message: {
+            Text(accountDeletionError ?? "Please try again.")
         }
     }
 }

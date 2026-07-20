@@ -289,6 +289,7 @@ final class TinisBackend: ObservableObject {
     var isConfigured: Bool { client != nil }
     var isReady: Bool { phase == .ready && clubID != nil }
     var canConnectApple: Bool { client != nil && currentUserID != nil }
+    var canDeleteAccount: Bool { client != nil && currentUserID != nil }
     var currentProfilePhotoURL: URL? {
         guard let currentUserID else { return nil }
         return avatarURLs[currentUserID]
@@ -531,6 +532,28 @@ final class TinisBackend: ObservableObject {
         if let client {
             try? await client.auth.signOut()
         }
+        clearLocalSession()
+    }
+
+    func deleteAccount() async -> Bool {
+        guard let client, canDeleteAccount else {
+            errorMessage = "Sign in again before deleting your account."
+            return false
+        }
+
+        errorMessage = nil
+        do {
+            try await client.functions.invoke("delete-account")
+            try? await client.auth.signOut()
+            clearLocalSession()
+            return true
+        } catch {
+            errorMessage = "Your account could not be deleted. Nothing was changed. Please try again."
+            return false
+        }
+    }
+
+    private func clearLocalSession() {
         clubID = nil
         friendFeed = []
         leaderboard = []
